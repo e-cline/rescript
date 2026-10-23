@@ -2275,6 +2275,47 @@ grep 'Namespace SharedNamespace is provided by both' \
 grep 'namespace-one' "$namespace_collision/output.log" >/dev/null
 grep 'namespace-two' "$namespace_collision/output.log" >/dev/null
 
+# A qualified source's directories are modules, so discovery rejects trees
+# that would give two modules one name, before anything is compiled.
+qualified_sources="$work/qualified-sources"
+mkdir -p "$qualified_sources/src/Ui" "$qualified_sources/src/Admin"
+printf '{"name":"qualified-sources","sources":{"dir":"src","subdirs":"qualified"}}\n' \
+  >"$qualified_sources/rescript.json"
+printf 'let value = 1\n' >"$qualified_sources/src/App.res"
+printf 'let value = 1\n' >"$qualified_sources/src/Ui/Button.res"
+printf 'let value = 1\n' >"$qualified_sources/src/Admin/Button.res"
+if "$port" build "$qualified_sources" \
+  >"$qualified_sources/build.log" 2>&1; then
+  echo "qualified sources built before the build graph supports them" >&2
+  exit 1
+fi
+grep -F '"subdirs": "qualified", which the build' \
+  "$qualified_sources/build.log" >/dev/null
+if grep -F 'Duplicate module name' "$qualified_sources/build.log" >/dev/null
+then
+  echo "same-named files in qualified directories were duplicates" >&2
+  exit 1
+fi
+printf 'let value = 1\n' >"$qualified_sources/src/Ui.res"
+if "$port" build "$qualified_sources" \
+  >"$qualified_sources/build.log" 2>&1; then
+  echo "a file beside a directory of the same module name built" >&2
+  exit 1
+fi
+tr '\\' '/' <"$qualified_sources/build.log" | \
+  grep -F 'src/Ui.res and directory src/Ui both define module Ui.' >/dev/null
+rm "$qualified_sources/src/Ui.res"
+mkdir -p "$qualified_sources/src/ui-kit"
+printf 'let value = 1\n' >"$qualified_sources/src/ui-kit/Input.res"
+if "$port" build "$qualified_sources" \
+  >"$qualified_sources/build.log" 2>&1; then
+  echo "a directory without a valid module name built" >&2
+  exit 1
+fi
+tr '\\' '/' <"$qualified_sources/build.log" | \
+  grep -F 'Directory src/ui-kit in the qualified source "src" is not a valid module name' \
+  >/dev/null
+
 "$port" build "$source_map"
 test -f "$source_map/src/Main.js.map"
 test -f "$source_map/lib/bs/compiler-info.json"

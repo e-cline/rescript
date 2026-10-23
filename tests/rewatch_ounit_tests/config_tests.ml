@@ -350,6 +350,7 @@ let compiler_job_tests =
         Source.
           {
             name = "A";
+            qualifier = [];
             implementation = "src/A.res";
             interface = None;
             is_dev = false;

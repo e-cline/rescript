@@ -108,6 +108,7 @@ let tests =
       let moved_module : Source.module_ =
         {
           name = "A";
+          qualifier = [];
           implementation = "src/nested/A.res";
           interface = None;
           is_dev = false;
@@ -140,6 +141,7 @@ let tests =
       let module_ : Source.module_ =
         {
           name = "A";
+          qualifier = [];
           implementation = "src/nested/A.res";
           interface = None;
           is_dev = false;
@@ -242,6 +244,7 @@ let tests =
       let module_ : Source.module_ =
         {
           name = "Present";
+          qualifier = [];
           implementation = "src/Present.res";
           interface = None;
           is_dev = false;
@@ -268,6 +271,7 @@ let tests =
       let module_ : Source.module_ =
         {
           name = "A";
+          qualifier = [];
           implementation = "src/A.res";
           interface = None;
           is_dev = false;

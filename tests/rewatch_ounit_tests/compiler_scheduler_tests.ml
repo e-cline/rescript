@@ -30,6 +30,7 @@ let source name =
   Source.
     {
       name;
+      qualifier = [];
       implementation = Filename.concat "src" (name ^ ".res");
       interface = None;
       is_dev = false;

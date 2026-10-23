@@ -1,5 +1,6 @@
 type module_ = {
   name: string;
+  qualifier: string list;
   implementation: string;
   interface: string option;
   is_dev: bool;
@@ -16,7 +17,16 @@ type discovery = {
 type discovered_file = {path: string; modified: float}
 type source_kind = Implementation | Interface
 
-type scanned_file = {file: discovered_file; kind: source_kind; is_dev: bool}
+(* A file below a qualified source records that source's directory and the
+   directories between it and the file. *)
+type qualified_location = {source_dir: string; directories: string list}
+
+type scanned_file = {
+  file: discovered_file;
+  kind: source_kind;
+  is_dev: bool;
+  qualified: qualified_location option;
+}
 
 type scanned_sources = {
   files: scanned_file list;
@@ -107,8 +117,8 @@ let scan_source ~root (source : Config.source) ~discover_modules ~on_missing
     ~visited_dirs ~visited_inventory_dirs ~collect_inventory ~collect_gentype
     ~visited_gentype_dirs candidates inventory_files present_files gentype_dirs
     =
-  let rec scan_directory ~relative ~collect_inventory ~discover_requested
-      ~collect_gentype ~identity =
+  let rec scan_directory ~relative ~directories ~collect_inventory
+      ~discover_requested ~collect_gentype ~identity =
     let absolute = Filename.concat root relative in
     let coverage table requested =
       if requested then
@@ -158,6 +168,15 @@ let scan_source ~root (source : Config.source) ~discover_modules ~on_missing
                   };
                 kind;
                 is_dev = source.is_dev;
+                qualified =
+                  (match source.subdirs with
+                  | Config.Qualified_subdirs ->
+                    Some
+                      {
+                        source_dir = source.dir;
+                        directories = List.rev directories;
+                      }
+                  | Config.Own_dir | Config.All_subdirs -> None);
               }
               :: !candidates
       in
@@ -177,6 +196,7 @@ let scan_source ~root (source : Config.source) ~discover_modules ~on_missing
                   Platform.directory_identity ~path:absolute_path metadata
                 in
                 scan_directory ~relative:relative_path
+                  ~directories:(name :: directories)
                   ~collect_inventory:inventory_children
                   ~discover_requested:discover_children
                   ~collect_gentype:gentype_children ~identity
@@ -193,6 +213,7 @@ let scan_source ~root (source : Config.source) ~discover_modules ~on_missing
                         target_metadata
                     in
                     scan_directory ~relative:relative_path
+                      ~directories:(name :: directories)
                       ~collect_inventory:false
                       ~discover_requested:discover_children
                       ~collect_gentype:gentype_children ~identity
@@ -212,7 +233,7 @@ let scan_source ~root (source : Config.source) ~discover_modules ~on_missing
     match metadata.Unix.st_kind with
     | Unix.S_DIR ->
       let identity = Platform.directory_identity ~path:absolute metadata in
-      scan_directory ~relative ~collect_inventory
+      scan_directory ~relative ~directories:[] ~collect_inventory
         ~discover_requested:discover_modules ~collect_gentype ~identity
     | Unix.S_LNK -> (
       match Unix.stat absolute with
@@ -223,7 +244,7 @@ let scan_source ~root (source : Config.source) ~discover_modules ~on_missing
           let identity =
             Platform.directory_identity ~path:absolute target_metadata
           in
-          scan_directory ~relative ~collect_inventory:false
+          scan_directory ~relative ~directories:[] ~collect_inventory:false
             ~discover_requested:discover_modules ~collect_gentype ~identity
         | _ ->
           present_files := absolute :: !present_files;
@@ -344,6 +365,75 @@ let discover_files ~on_missing (config : Config.t) ~prod ~features =
   |> List.map (fun source -> source.file.path)
   |> List.sort_uniq String.compare
 
+let qualifier (source : scanned_file) =
+  match source.qualified with
+  | None -> []
+  | Some {directories} -> List.map String.capitalize_ascii directories
+
+let module_path ~qualifier name = String.concat "." (qualifier @ [name])
+
+(* The directories of qualified sources are modules, so each must have a
+   valid module name, no two may have the same one, and no file may define a
+   module of the same name beside one. Every discovered file is checked, so
+   whether a tree is valid doesn't depend on --filter. *)
+let validate_qualified_directories ~display_root ~root files =
+  let display = display_path ~display_root root in
+  let directories = Hashtbl.create 16 in
+  List.iter
+    (fun source ->
+      match source.qualified with
+      | None -> ()
+      | Some {source_dir; directories = names} ->
+        ignore
+          (List.fold_left
+             (fun (path, qualifier) name ->
+               let path = Filename.concat path name in
+               let module_name = String.capitalize_ascii name in
+               if not (is_non_exotic_module_name module_name) then
+                 raise
+                   (Error
+                      (Printf.sprintf
+                         "Could not initialize build: Directory %s in the \
+                          qualified source \"%s\" is not a valid module name. \
+                          Rename it to letters, digits and underscores, \
+                          starting with a letter."
+                         (display path) source_dir));
+               let qualifier = qualifier @ [module_name] in
+               let key = String.concat "." qualifier in
+               (match Hashtbl.find_opt directories key with
+               | None -> Hashtbl.add directories key path
+               | Some previous when previous = path -> ()
+               | Some previous ->
+                 let first, second =
+                   if String.compare previous path <= 0 then (previous, path)
+                   else (path, previous)
+                 in
+                 raise
+                   (Error
+                      (Printf.sprintf
+                         "Could not initialize build: Directories %s and %s \
+                          are both module %s. Rename one of them."
+                         (display first) (display second) key)));
+               (path, qualifier))
+             (without_current_dir_segments source_dir, [])
+             names))
+    files;
+  List.iter
+    (fun source ->
+      let key =
+        module_path ~qualifier:(qualifier source) (module_name source.file.path)
+      in
+      match Hashtbl.find_opt directories key with
+      | None -> ()
+      | Some directory ->
+        raise
+          (Error
+             (Printf.sprintf
+                "Could not initialize build: %s and directory %s both define \
+                 module %s. Rename one of them."
+                (display source.file.path) (display directory) key)))
+    files
+
 let discover_with_inventory ?(on_orphan = fun _ -> ()) ~on_missing
     ?(display_root = Sys.getcwd ()) (config : Config.t) ~prod ~features ~filter
     =
@@ -357,16 +447,19 @@ let discover_with_inventory ?(on_orphan = fun _ -> ()) ~on_missing
       ~collect_gentype:(config.gentype_args <> [])
   in
   let files = scanned.files in
+  validate_qualified_directories ~display_root ~root:config.root files;
   let table = Hashtbl.create (List.length files) in
   List.iter
     (fun source ->
       let file = source.file in
       let is_dev = source.is_dev in
-      let name = module_name file.path in
+      let qualifier = qualifier source in
+      let name = module_path ~qualifier (module_name file.path) in
       let implementation, interface, old_dev =
         match Hashtbl.find_opt table name with
         | None -> (None, None, is_dev)
-        | Some values -> values
+        | Some (implementation, interface, old_dev, _) ->
+          (implementation, interface, old_dev)
       in
       match source.kind with
       | Interface -> (
@@ -377,7 +470,7 @@ let discover_with_inventory ?(on_orphan = fun _ -> ()) ~on_missing
                file.path)
         | None ->
           Hashtbl.replace table name
-            (implementation, Some file, old_dev || is_dev))
+            (implementation, Some file, old_dev || is_dev, qualifier))
       | Implementation -> (
         match implementation with
         | Some previous ->
@@ -385,10 +478,11 @@ let discover_with_inventory ?(on_orphan = fun _ -> ()) ~on_missing
             (duplicate_error ~display_root config.root name previous.path
                file.path)
         | None ->
-          Hashtbl.replace table name (Some file, interface, old_dev || is_dev)))
+          Hashtbl.replace table name
+            (Some file, interface, old_dev || is_dev, qualifier)))
     (List.filter (fun source -> matches_filter source.file.path) files);
   Hashtbl.iter
-    (fun _ (implementation, interface, _) ->
+    (fun _ (implementation, interface, _, _) ->
       match (implementation, interface) with
       | Some implementation, Some interface
         when Filename.remove_extension implementation.path
@@ -397,30 +491,35 @@ let discover_with_inventory ?(on_orphan = fun _ -> ()) ~on_missing
       | _ -> ())
     table;
   Hashtbl.to_seq table
-  |> Seq.filter_map (fun (_, (implementation, interface, _)) ->
+  |> Seq.filter_map (fun (_, (implementation, interface, _, _)) ->
       match (implementation, interface) with
       | None, Some interface -> Some interface.path
       | _ -> None)
   |> List.of_seq |> List.sort String.compare |> List.iter on_orphan;
   let modules =
     Hashtbl.to_seq table
-    |> Seq.filter_map (fun (name, (implementation, interface, is_dev)) ->
-        match implementation with
-        | None -> None
-        | Some implementation ->
-          Some
-            {
-              name;
-              implementation = implementation.path;
-              interface = Option.map (fun file -> file.path) interface;
-              is_dev;
-            })
+    |> Seq.filter_map
+         (fun (_, (implementation, interface, is_dev, qualifier)) ->
+           match implementation with
+           | None -> None
+           | Some implementation ->
+             Some
+               {
+                 name = module_name implementation.path;
+                 qualifier;
+                 implementation = implementation.path;
+                 interface = Option.map (fun file -> file.path) interface;
+                 is_dev;
+               })
     |> List.of_seq
-    |> List.sort (fun a b -> String.compare a.name b.name)
+    |> List.sort (fun a b ->
+        String.compare
+          (module_path ~qualifier:a.qualifier a.name)
+          (module_path ~qualifier:b.qualifier b.name))
   in
   let source_mtimes =
     Hashtbl.to_seq_values table
-    |> Seq.flat_map (fun (implementation, interface, _) ->
+    |> Seq.flat_map (fun (implementation, interface, _, _) ->
         List.to_seq (Option.to_list implementation @ Option.to_list interface))
     |> Seq.map (fun file -> (file.path, file.modified))
     |> List.of_seq

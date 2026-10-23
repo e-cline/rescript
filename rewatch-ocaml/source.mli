@@ -4,6 +4,11 @@
 
 type module_ = {
   name: string;
+  qualifier: string list;
+      (** The module names of the directories between a qualified source and
+          the module, outermost first: [["Ui"; "Controls"]] for
+          src/Ui/Controls/Button.res in the qualified source src. Empty for a
+          module of any other source. *)
   implementation: string;
   interface: string option;
   is_dev: bool;

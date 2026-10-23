@@ -24,13 +24,13 @@ let discover_with_inventory config ?(prod = false) ?features () =
   Source.discover_with_inventory config ~on_missing:ignore ~prod ~features
     ~filter:None
 
-let tests =
-  "source_tests" >:: fun _context ->
+let discovery_tests _context =
   let namespace_modules =
     [
       Source.
         {
           name = "Entry";
+          qualifier = [];
           implementation = "Entry.res";
           interface = None;
           is_dev = false;
@@ -38,6 +38,7 @@ let tests =
       Source.
         {
           name = "Member";
+          qualifier = [];
           implementation = "Member.res";
           interface = None;
           is_dev = false;
@@ -45,6 +46,7 @@ let tests =
       Source.
         {
           name = "Member-with-dash";
+          qualifier = [];
           implementation = "Member-with-dash.res";
           interface = None;
           is_dev = false;
@@ -279,3 +281,124 @@ let tests =
           (names discovered = ["Regular"])
           "source discovery excludes FIFOs even when their names have source \
            extensions"))
+
+let module_paths modules =
+  List.map
+    (fun (module_ : Source.module_) ->
+      ( String.concat "." (module_.qualifier @ [module_.name]),
+        module_.implementation,
+        module_.interface ))
+    modules
+
+(* A project whose only source is a qualified src, holding [files]. *)
+let qualified_project root files =
+  List.iter
+    (fun file -> write_file (Test_support.path root file) "let value = 1\n")
+    files;
+  let config_path = Filename.concat root "rescript.json" in
+  write_file config_path
+    {|{"name":"qualified","sources":{"dir":"src","subdirs":"qualified"}}|};
+  Config.load config_path
+
+let rejects ?filter config fragments =
+  try
+    ignore (discover config ?filter ());
+    false
+  with Source.Error message ->
+    List.for_all (Test_support.contains_text message) fragments
+
+(* Whether the filesystem at [root] tells file names apart by case. *)
+let case_sensitive root =
+  write_file (Test_support.path root "case-probe") "";
+  let sensitive = not (Sys.file_exists (Test_support.path root "CASE-PROBE")) in
+  Sys.remove (Test_support.path root "case-probe");
+  sensitive
+
+let qualified_tests _context =
+  Test_support.with_temp_dir "rewatch-ocaml-qualified-" (fun root ->
+      let config =
+        qualified_project root
+          [
+            "src/App.res";
+            "src/Ui/Button.res";
+            "src/Ui/Button.resi";
+            "src/Ui/Controls/Button.res";
+            "src/Admin/Button.res";
+            "src/Admin/Input.resi";
+            "src/lower/thing.res";
+            "src/.assets/notes.txt";
+          ]
+      in
+      let orphans = ref [] in
+      let discovery =
+        Source.discover_with_inventory config ~on_missing:ignore
+          ~on_orphan:(fun path -> orphans := path :: !orphans)
+          ~prod:false ~features:None ~filter:None
+      in
+      assert_equal
+        ~printer:(fun modules ->
+          modules |> List.map (fun (name, _, _) -> name) |> String.concat ", ")
+        [
+          ("Admin.Button", "src/Admin/Button.res", None);
+          ("App", "src/App.res", None);
+          ("Lower.Thing", "src/lower/thing.res", None);
+          ("Ui.Button", "src/Ui/Button.res", Some "src/Ui/Button.resi");
+          ("Ui.Controls.Button", "src/Ui/Controls/Button.res", None);
+        ]
+        (module_paths discovery.modules);
+      check
+        (!orphans = ["src/Admin/Input.resi"])
+        "an interface pairs only with the implementation in its directory";
+      check
+        (List.length (discover config ~filter:"^Button\\.res$" ()) = 3)
+        "a filter matches same-named files in every directory");
+  Test_support.with_temp_dir "rewatch-ocaml-qualified-" (fun root ->
+      ignore (qualified_project root ["src/App.res"; "src/ui-kit/Button.res"]);
+      write_file
+        (Filename.concat root "rescript.json")
+        {|{"name":"qualified","sources":{"dir":"./src","subdirs":"qualified"}}|};
+      let config = Config.load (Filename.concat root "rescript.json") in
+      check
+        (rejects config ["ui-kit"; "is not a valid module name"])
+        "a directory holding sources must have a valid module name";
+      check
+        (try
+           ignore (discover config ());
+           false
+         with Source.Error message ->
+           not
+             (Test_support.contains_text message
+                (Test_support.path Filename.current_dir_name "src/ui-kit")))
+        "the directory is named without the source's \"./\"";
+      check
+        (rejects config ~filter:"^App\\.res$"
+           ["ui-kit"; "is not a valid module name"])
+        "a filter doesn't hide an invalid directory");
+  Test_support.with_temp_dir "rewatch-ocaml-qualified-" (fun root ->
+      let config = qualified_project root ["src/Ui.res"; "src/Ui/Button.res"] in
+      check
+        (rejects config ["Ui.res"; "both define module Ui."])
+        "a file and a directory cannot define the same module");
+  Test_support.with_temp_dir "rewatch-ocaml-qualified-" (fun root ->
+      let config =
+        qualified_project root ["src/Ui/Button.resi"; "src/Ui/Button/Icon.res"]
+      in
+      check
+        (rejects config ["Button.resi"; "both define module Ui.Button."])
+        "an interface and a directory cannot define the same module");
+  Test_support.with_temp_dir "rewatch-ocaml-qualified-" (fun root ->
+      if case_sensitive root then (
+        let config = qualified_project root ["src/ui/A.res"; "src/Ui/B.res"] in
+        check
+          (rejects config ["are both module Ui."])
+          "directories whose names differ only in case are rejected";
+        let config =
+          qualified_project root ["src/Ui/button.res"; "src/Ui/Button.res"]
+        in
+        check
+          (rejects config ["Duplicate module name: Ui.Button"])
+          "files whose names differ only in case are duplicates"))
+
+let tests =
+  "source_tests"
+  >::: ["discovery" >:: discovery_tests; "qualified" >:: qualified_tests]

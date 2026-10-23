@@ -75,6 +75,7 @@ let dependency_state_tests _context =
   let entry_source : Source.module_ =
     {
       name = "Entry";
+      qualifier = [];
       implementation = "src/Entry.res";
       interface = None;
       is_dev = false;
