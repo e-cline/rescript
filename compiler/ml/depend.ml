@@ -66,13 +66,19 @@ let rec add_path bv ?(p = []) = function
   | Lident s ->
     let free =
       try lookup_free (s :: p) bv
-      with Not_found -> (
-        (* Also record [S.M] for a qualified free path: when [S] is the
-           namespace of the module's own package, the build system resolves
-           [M] in that namespace, which [S] alone cannot tell it. *)
-        match p with
-        | [] -> String_set.singleton s
-        | m :: _ -> String_set.of_list [s; s ^ "." ^ m])
+      with Not_found ->
+        (* Also record every prefix of a qualified free path, [S.M] and
+           [S.M.N] for [S.M.N.x]: the build system looks for the longest one
+           that names a source module, such as [M] in the namespace [S] of
+           the module's own package, or [Ui.Controls.Button] in a qualified
+           source directory, which [S] alone cannot tell it. *)
+        let rec prefixes path acc = function
+          | [] -> acc
+          | m :: rest ->
+            let path = path ^ "." ^ m in
+            prefixes path (String_set.add path acc) rest
+        in
+        prefixes s (String_set.singleton s) p
     in
     add_names free
   | Ldot (l, s) -> add_path bv ~p:(s :: p) l

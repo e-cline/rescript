@@ -72,6 +72,17 @@ async function compile(directory, module, namespaceArgs) {
   assert.equal(result.status, 0, `${ast}: ${result.stdout}${result.stderr}`);
 }
 
+/** @param {string} ast */
+async function astDependencies(ast) {
+  const contents = await fs.readFile(path.join(buildDir, ast));
+  const length = contents.readInt32BE(0);
+  return contents
+    .subarray(4, 4 + length)
+    .toString("utf8")
+    .split("\n")
+    .filter(name => name !== "");
+}
+
 await fs.rm(libDir, { recursive: true, force: true });
 await fs.mkdir(buildDir, { recursive: true });
 
@@ -115,6 +126,18 @@ try {
     "Admin-MyApp",
   ]);
   await compile("src", "App", ["-bs-ns", "MyApp"]);
+
+  // The header names each prefix of a qualified path, so a build system can
+  // find the source module that a path such as Ui.Controls.Button names.
+  assert.deepEqual(await astDependencies("src/App.ast"), [
+    "Admin",
+    "Admin.Button",
+    "Ui",
+    "Ui.Button",
+    "Ui.Button.Icon",
+    "Ui.Controls",
+    "Ui.Controls.Button",
+  ]);
 
   // JavaScript files are named after their source files, not their units.
   for (const file of [
