@@ -32,3 +32,14 @@ let output_prefix name =
       (Filename.remove_extension name)
       ?ns:!((Clflags.current ()).dont_record_crc_unit)
   | Some oname -> Filename.remove_extension oname
+
+let js_file_stem output_prefix =
+  let name = Filename.basename output_prefix in
+  match
+    ( !((Clflags.current ()).output_name),
+      !((Clflags.current ()).dont_record_crc_unit) )
+  with
+  | None, Some ns when String.ends_with ~suffix:(Literals.ns_sep ^ ns) name ->
+    String.sub name 0
+      (String.length name - String.length ns - String.length Literals.ns_sep)
+  | Some _, _ | None, _ -> Ext_namespace.change_ext_ns_suffix name ""

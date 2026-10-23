@@ -49,10 +49,12 @@ type t = {
   values: keyed_cmj_values;
   pure: bool;
   package_spec: Js_packages_info.t;
-  case: Ext_js_file_kind.case;
+  js_file_stem: string;
+      (** The module's JavaScript file name without its suffix. *)
 }
 
-let make ~(values : cmj_value Map_string.t) ~effect_ ~package_spec ~case : t =
+let make ~(values : cmj_value Map_string.t) ~effect_ ~package_spec ~js_file_stem
+    : t =
   {
     values =
       Map_string.bindings values
@@ -65,7 +67,7 @@ let make ~(values : cmj_value Map_string.t) ~effect_ ~package_spec ~case : t =
       |> Array.of_list;
     pure = effect_ = None;
     package_spec;
-    case;
+    js_file_stem;
   }
 
 (* Serialization .. *)

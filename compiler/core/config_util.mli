@@ -39,3 +39,10 @@ val output_prefix : string -> string
     in: src/hello.ast
     out: src/hello-Ns
 *)
+
+val js_file_stem : string -> string
+(** The name of the JavaScript file for [output_prefix], without its suffix.
+    The namespace is removed whole, since it can itself contain [-]: the
+    namespace of a qualified source directory is [Ui-MyApp], so
+    [src/Ui/Button-Ui-MyApp] is [Button], not [Button-Ui].
+*)

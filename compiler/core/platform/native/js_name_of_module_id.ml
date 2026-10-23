@@ -87,7 +87,7 @@ let string_of_module_id (dep_module_id : Lam_module_ident.t)
         Js_packages_info.query_package_infos current_package_info module_system
       in
       match Lam_compile_env.get_package_path_from_cmj dep_module_id with
-      | _, dep_package_info, case -> (
+      | _, dep_package_info, js_file_stem -> (
         let dep_info_query =
           Js_packages_info.query_package_infos dep_package_info module_system
         in
@@ -99,16 +99,10 @@ let string_of_module_id (dep_module_id : Lam_module_ident.t)
             (Dependency_script_module_dependent_not dep_module_id.id.name)
         | (Package_script | Package_found _), Package_not_found -> assert false
         | Package_found ({suffix} as pkg), Package_script ->
-          let js_file =
-            Ext_namespace.js_name_of_modulename dep_module_id.id.name case
-              suffix
-          in
+          let js_file = js_file_stem ^ suffix in
           pkg.pkg_rel_path // js_file
         | Package_found ({suffix} as dep_pkg), Package_found cur_pkg ->
-          let js_file =
-            Ext_namespace.js_name_of_modulename dep_module_id.id.name case
-              suffix
-          in
+          let js_file = js_file_stem ^ suffix in
 
           if
             Js_packages_info.same_package_by_name current_package_info
@@ -124,10 +118,7 @@ let string_of_module_id (dep_module_id : Lam_module_ident.t)
               module_system
           else dep_pkg.pkg_rel_path // js_file
         | Package_script, Package_script -> (
-          let js_file =
-            Ext_namespace.js_name_of_modulename dep_module_id.id.name case
-              Literals.suffix_js
-          in
+          let js_file = js_file_stem ^ Literals.suffix_js in
           match Config_util.find_opt js_file with
           | Some file ->
             let basename = Filename.basename file in

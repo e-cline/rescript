@@ -427,7 +427,7 @@ let compile ?on_optimized_lambda (output_prefix : string)
   in
   let v : Js_cmj_format.t =
     Lam_stats_export.export_to_cmj meta effect_ export_map
-      (Ext_filename.case output_prefix)
+      (Config_util.js_file_stem output_prefix)
   in
   if not !((Clflags.current ()).dont_write_files) then
     Js_cmj_format.to_file
@@ -476,9 +476,7 @@ let lambda_as_module (lambda_output : J.deps_program) (output_prefix : string) :
     match !((Js_config.current ()).source_map) with
     | Inline ->
       let target_file =
-        Ext_namespace.change_ext_ns_suffix
-          (Filename.basename output_prefix)
-          Literals.suffix_js
+        Config_util.js_file_stem output_prefix ^ Literals.suffix_js
       in
       dump_deps_program_with_source_map ~remove_stale_map:false ~target_file
         ~output_prefix Commonjs lambda_output
@@ -488,11 +486,7 @@ let lambda_as_module (lambda_output : J.deps_program) (output_prefix : string) :
         (Compiler_request_output.stdout_channel ())
   else
     Js_packages_info.iter package_info (fun {module_system; path; suffix} ->
-        let basename =
-          Ext_namespace.change_ext_ns_suffix
-            (Filename.basename output_prefix)
-            suffix
-        in
+        let basename = Config_util.js_file_stem output_prefix ^ suffix in
         let target_file =
           Ext_path.package_dir () // path
           // basename (* #913 only generate little-case js file *)

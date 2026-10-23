@@ -65,14 +65,15 @@ type t = {
   values: keyed_cmj_value array;
   pure: bool;
   package_spec: Js_packages_info.t;
-  case: Ext_js_file_kind.case;
+  js_file_stem: string;
+      (** The module's JavaScript file name without its suffix. *)
 }
 
 val make :
   values:cmj_value Map_string.t ->
   effect_:effect_ ->
   package_spec:Js_packages_info.t ->
-  case:Ext_js_file_kind.case ->
+  js_file_stem:string ->
   t
 
 val query_by_name : t -> string -> keyed_cmj_value
