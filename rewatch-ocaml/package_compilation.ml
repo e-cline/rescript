@@ -10,8 +10,11 @@ let prepare ~(package : Package_plan.t) ~(prepared : Build_session.prepared)
   let ocaml_dir = package.ocaml_dir in
   let modules = package.modules in
   let module_is_dirty module_ (state : Build_state.module_) =
-    let global_key = Source.compiler_basename config module_.Source.name in
-    let module_name = Source.module_name module_.Source.implementation in
+    let global_key = Source.compiler_basename config module_ in
+    let module_name =
+      Source.module_name
+        (Source.published_basename config module_.Source.implementation)
+    in
     let source_artifact_is_pending path =
       let source = Filename.concat root path in
       match
@@ -43,7 +46,7 @@ let prepare ~(package : Package_plan.t) ~(prepared : Build_session.prepared)
         ~namespace_freshness:attempt.namespace_freshness build_state state
         dependency_state
     in
-    Hashtbl.mem parse_dirty_modules module_.Source.name
+    Hashtbl.mem parse_dirty_modules (Source.module_path module_)
     || Hashtbl.mem removed_module_names module_name
     || List.exists source_artifact_is_pending
          (module_.Source.implementation
@@ -58,7 +61,7 @@ let prepare ~(package : Package_plan.t) ~(prepared : Build_session.prepared)
   if attempt.freshness_mode = Build_attempt.Initialize_freshness then
     List.iter
       (fun module_ ->
-        let key = Source.compiler_basename config module_.Source.name in
+        let key = Source.compiler_basename config module_ in
         let state = Build_state.find_exn build_state key in
         state.compile_dirty <-
           state.compile_dirty || module_is_dirty module_ state)
@@ -99,7 +102,7 @@ let prepare ~(package : Package_plan.t) ~(prepared : Build_session.prepared)
     let candidates =
       List.filter_map
         (fun module_ ->
-          let key = Source.compiler_basename config module_.Source.name in
+          let key = Source.compiler_basename config module_ in
           let state = Build_state.find_exn build_state key in
           if Hashtbl.mem attempt.blocked_modules key then None
           else
@@ -127,23 +130,37 @@ let prepare ~(package : Package_plan.t) ~(prepared : Build_session.prepared)
                     ~source_kind path result)
                 ~record_published_outputs
                 ~post_build:(Compiler_process.post_build_tasks config)
+                ~published_ast:
+                  (Build_artifacts.published_ast_path ~config ~ocaml_dir)
                 ~package_root:config.root ~is_local
                 ~mark_warning:(fun _path ->
                   module_.Source.implementation
                   :: Option.to_list module_.Source.interface
                   |> List.iter (fun path ->
                       Hashtbl.replace compile_warning_paths
-                        (Build_artifacts.published_ast_path ~ocaml_dir path)
+                        (Build_artifacts.published_ast_path ~config ~ocaml_dir
+                           path)
                         ()))
             in
             Some (Compiler_scheduler.candidate ~key ~state ~warning_paths ~make))
         modules
     in
-    Config.namespace_compiler_name config.namespace
-    |> Option.iter (fun compiler_name ->
+    let namespace_maps =
+      (Config.namespace_compiler_name config.namespace
+      |> Option.map (fun compiler_name ->
+          (compiler_name, [], Module_graph.namespace_map_key root))
+      |> Option.to_list)
+      @ List.map
+          (fun qualifier ->
+            ( Source.directory_map_name config qualifier,
+              qualifier,
+              Module_graph.directory_map_key root qualifier ))
+          (Source.directories modules)
+    in
+    namespace_maps
+    |> List.iter (fun (compiler_name, qualifier, key) ->
         let namespace_map =
-          Build_session.find_namespace_map attempt.session
-            (Module_graph.namespace_map_key root)
+          Build_session.find_namespace_map attempt.session key
         in
         let namespace_state =
           Build_state.find_exn build_state namespace_map.key
@@ -157,10 +174,11 @@ let prepare ~(package : Package_plan.t) ~(prepared : Build_session.prepared)
         then
           Compiler_process.namespace_task
             ~runtime:prepared.compiler_context.runtime_path ~build_dir
-            ~ocaml_dir
-            ~entry:(Config.namespace_entry config.namespace)
-            ~package_dirty ~force:namespace_state.compile_dirty compiler_name
-            modules
+            ~ocaml_dir ~package_dirty ~force:namespace_state.compile_dirty
+            compiler_name
+            (Source.map_members
+               ~entry:(Config.namespace_entry config.namespace)
+               modules qualifier)
           |> Option.iter (fun namespace_task ->
               namespace_state.compile_dirty <- true;
               let cmi_path =

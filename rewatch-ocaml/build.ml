@@ -118,7 +118,7 @@ let incremental_sources (previous : retained_build) changes =
           | None -> raise Full_rebuild_required
         in
         let key =
-          Source.compiler_basename package.compile_config source.module_.name
+          Source.compiler_basename package.compile_config source.module_
         in
         sources := {package; source; key} :: !sources
       | None -> raise Full_rebuild_required)
@@ -159,7 +159,8 @@ let prepare_incremental previous changes (attempt : Build_attempt.t)
       ~symbol:Platform.parse_symbol ~label:"Parsing"
       (List.map
          (fun source ->
-           source.package.root ^ "\000" ^ source.source.module_.Source.name)
+           source.package.root ^ "\000"
+           ^ Source.module_path source.source.module_)
          sources)
   in
   let results =
@@ -219,6 +220,7 @@ let prepare_incremental previous changes (attempt : Build_attempt.t)
              ~find_module:(Build_session.find_global_module attempt.session)
              ~find_namespace_maps:
                (Build_session.find_namespace_maps attempt.session)
+             ~find_module_path:(Build_session.find_module_path attempt.session)
              node))
       !dependency_updates);
   match Build_session.graph_cycle attempt.session with
@@ -481,17 +483,7 @@ let run ~poll ~verbosity ~folder ~prod ~features ~warn_error ~after_build
 let remove_compile_warning_freshness warning_state =
   Warning_state.entries warning_state
   |> List.iter (fun (entry : Warning_state.entry) ->
-      let implementation =
-        if Filename.check_suffix entry.path ".resi" then
-          Filename.chop_suffix entry.path "i"
-        else entry.path
-      in
-      [implementation; implementation ^ "i"]
-      |> List.iter (fun source ->
-          File_util.remove_file
-            (Build_artifacts.published_ast_path
-               ~ocaml_dir:(Build_artifacts.lib_path entry.package_root "ocaml")
-               source)))
+      List.iter File_util.remove_file entry.published_asts)
 
 let watch ~verbosity ~folder ~prod ~features ~warn_error ~after_build ~filter
     ~clear_screen =

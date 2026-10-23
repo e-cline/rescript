@@ -42,6 +42,7 @@ val compiler_arguments_with_common :
   config:Config.t ->
   common_args:string list ->
   module_name:string ->
+  qualifier:string list ->
   source_kind:Source.source_kind ->
   has_interface:bool ->
   path:string ->

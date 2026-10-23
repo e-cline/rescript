@@ -35,6 +35,15 @@ val add_global_module : t -> string -> Module_graph.module_node -> unit
 val global_module_values : t -> Module_graph.module_node list
 val find_namespace_maps : t -> string -> Module_graph.namespace_map list option
 val add_namespace_map : t -> Module_graph.namespace_map -> unit
+
+val add_module_paths :
+  t -> (string, Module_graph.module_path_target) Hashtbl.t -> unit
+
+val find_module_path :
+  t ->
+  package_root:string ->
+  string list ->
+  Module_graph.module_path_target option
 val find_namespace_map : t -> string -> Module_graph.namespace_map
 val namespace_map_values : t -> Module_graph.namespace_map list
 val graph_cycle : t -> cycle_cache

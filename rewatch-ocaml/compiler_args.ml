@@ -82,13 +82,31 @@ let gentype_dependency_args_from_paths (config : Config.t) dependencies =
         | None -> []
         | Some path -> ["-bs-gentype-dep-path"; dependency.name ^ "=" ^ path])
 
-let namespace_args (config : Config.t) module_name =
-  match config.namespace with
-  | Config.No_namespace -> []
-  | Config.Namespace namespace -> ["-bs-ns"; namespace]
-  | Config.Namespace_with_entry {name; entry} ->
-    if entry = module_name then ["-open"; "@" ^ name]
-    else ["-bs-ns"; "@" ^ name]
+(* A module of a qualified directory opens the maps of the package and of each
+   directory above its own, outermost first, so the nearest binding of a name
+   wins, and is compiled in its own directory's map. *)
+let namespace_args (config : Config.t) ~qualifier module_name =
+  match qualifier with
+  | [] -> (
+    match config.namespace with
+    | Config.No_namespace -> []
+    | Config.Namespace namespace -> ["-bs-ns"; namespace]
+    | Config.Namespace_with_entry {name; entry} ->
+      if entry = module_name then ["-open"; "@" ^ name]
+      else ["-bs-ns"; "@" ^ name])
+  | _ :: _ ->
+    let rec enclosing = function
+      | [] | [_] -> []
+      | directory :: rest ->
+        [directory]
+        :: List.map (fun inner -> directory :: inner) (enclosing rest)
+    in
+    let opened =
+      Option.to_list (Config.namespace_compiler_name config.namespace)
+      @ List.map (Source.directory_map_name config) (enclosing qualifier)
+    in
+    List.concat_map (fun map -> ["-bs-open-ns"; map]) opened
+    @ ["-bs-ns"; Source.directory_map_name config qualifier]
 
 let parser_arguments ~(config : Config.t) ~contents ~path =
   parser_flags ~ppx_flags:(filter_ppx_flags config.ppx_flags contents) config
@@ -112,7 +130,7 @@ let compiler_common_arguments ~project_root ~(config : Config.t) ~runtime
   @ ["-bs-package-name"; config.name; "-bs-project-root"; project_root]
 
 let compiler_arguments_with_common ~(config : Config.t) ~common_args
-    ~module_name ~source_kind ~has_interface ~path =
+    ~module_name ~qualifier ~source_kind ~has_interface ~path =
   let interface_args =
     match source_kind with
     | Source.Implementation when has_interface -> ["-bs-read-cmi"]
@@ -126,7 +144,7 @@ let compiler_arguments_with_common ~(config : Config.t) ~common_args
         (fun spec -> ["-bs-package-output"; package_output config path spec])
         config.package_specs
   in
-  namespace_args config module_name
+  namespace_args config ~qualifier module_name
   @ interface_args @ common_args @ output_args
   @ [Source.ast_path path]
 
@@ -137,4 +155,6 @@ let compiler_arguments ~project_root ~(config : Config.t) ~runtime
     ~common_args:
       (compiler_common_arguments ~project_root ~config ~runtime ~dependency_dirs
          ~watch ~gentype_dependency_args)
-    ~module_name ~source_kind ~has_interface ~path
+    ~module_name
+    ~qualifier:(Source.qualifier_of_path config path)
+    ~source_kind ~has_interface ~path

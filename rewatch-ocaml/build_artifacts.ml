@@ -20,8 +20,10 @@ let generated_js_path (config : Config.t) path (spec : Config.package_spec) =
           (Filename.remove_extension (Filename.basename path)
           ^ Config.package_spec_suffix config spec)))
 
-let published_ast_path ~ocaml_dir source =
-  Filename.concat ocaml_dir (Filename.basename (Source.ast_path source))
+let published_ast_path ~config ~ocaml_dir source =
+  Filename.concat ocaml_dir
+    (Source.published_basename config source
+    ^ Filename.extension (Source.ast_path source))
 
 let generated_build_js_path ~build_dir (config : Config.t) path
     (spec : Config.package_spec) =
@@ -195,15 +197,19 @@ let cleanup_stale ~ocaml_files ~ast_sources ~source_files ~present_source_files
       let compiler_base =
         Source.compiler_asset_basename config module_.Source.implementation
       in
+      let published_base =
+        Source.published_basename config module_.Source.implementation
+      in
       Hashtbl.replace owned_output_names source_base ();
-      add_expected source_base [".ast"; ".res"];
+      add_expected published_base [".ast"; ".res"];
       if Option.is_some module_.Source.interface then (
-        add_expected source_base [".iast"; ".resi"];
+        add_expected published_base [".iast"; ".resi"];
         add_expected compiler_base [".cmti"]);
       add_expected compiler_base [".cmi"; ".cmj"; ".cmt"])
     modules;
-  Config.namespace_compiler_name config.namespace
-  |> Option.iter (fun namespace ->
+  Option.to_list (Config.namespace_compiler_name config.namespace)
+  @ List.map (Source.directory_map_name config) (Source.directories modules)
+  |> List.iter (fun namespace ->
       add_expected namespace [".cmi"; ".cmj"; ".cmt"; ".mlmap"]);
   let removed_modules = ref [] in
   (* Once the published CMI is removed, bsc still consults the working CMI to

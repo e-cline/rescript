@@ -107,6 +107,9 @@ let tests =
                     (Printf.sprintf "%s-%d" key index)
                     ()
                 done)
+              ~published_ast:(fun source ->
+                Filename.concat ocaml_dir
+                  (Filename.basename (Source.ast_path source)))
               ~post_build:(fun _ -> [])
               ~package_root:root ~is_local:true
               ~mark_warning:(fun _ -> ())
@@ -191,6 +194,9 @@ let tests =
                     write_file interrupted_cmi "published CMI";
                     Compiler_scheduler.{stderr = ""; cmi_change = Cmi_changed})
                   ~record_published_outputs:(fun ~source_kind:_ _path -> ())
+                  ~published_ast:(fun source ->
+                    Filename.concat ocaml_dir
+                      (Filename.basename (Source.ast_path source)))
                   ~post_build:(fun output ->
                     [
                       Compiler_scheduler.

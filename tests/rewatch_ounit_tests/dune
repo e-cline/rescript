@@ -30,6 +30,7 @@
   config_tests
   file_util_tests
   format_tests
+  module_graph_tests
   native_watcher_tests
   output_tests
   package_metadata_tests

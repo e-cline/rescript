@@ -17,6 +17,7 @@ type module_node = {
   package_root: string;
   source_path: string;
   namespace: Config.namespace;
+  qualifier: string list;
   visible_packages: (string, unit) Hashtbl.t;
   mutable raw_dependencies: string list;
 }
@@ -25,12 +26,23 @@ type namespace_map = {
   key: string;
   compiler_name: string;
   namespace: string;
+  qualifier: string list;
   package_name: string;
   package_root: string;
   members: string list;
 }
 
+type module_path_target =
+  | Module of string
+  | Directory of {package_root: string; qualifier: string list; key: string}
+
 let namespace_map_key package_root = "\000namespace:" ^ package_root
+
+let directory_map_key package_root qualifier =
+  namespace_map_key package_root ^ "\000" ^ String.concat "." qualifier
+
+let module_path_key package_root path =
+  package_root ^ "\000" ^ String.concat "." path
 
 let dependency_head dependency =
   match String.split_on_char '.' dependency with
@@ -128,17 +140,119 @@ let resolve_dependency ~find_module ~find_namespace_maps (node : module_node)
               Some namespace_map.key
             else None)))
 
-let resolved_dependencies ~find_module ~find_namespace_maps (node : module_node)
-    =
-  let parsed =
-    node.raw_dependencies
-    |> List.concat_map
-         (resolve_dependency ~find_module ~find_namespace_maps node)
+let rec is_prefix prefix path =
+  match (prefix, path) with
+  | [], _ -> true
+  | first :: prefix, second :: path -> first = second && is_prefix prefix path
+  | _ :: _, [] -> false
+
+(* Resolves a dependency by the module paths of the packages it can see, as
+   the compiler does through the namespace maps the module opens: in the
+   nearest of its directories that binds the path's first name, else in the
+   package namespace it names. [Some None] is a path into a source module,
+   such as [Ui.Button.Icon], whose module the header's shorter prefix names.
+   [None] leaves it to [resolve_dependency]. *)
+let resolve_module_path ~find_module_path ~find_namespace_maps
+    (node : module_node) path =
+  let find = find_module_path ~package_root:node.package_root in
+  let rec scopes qualifier =
+    qualifier
+    ::
+    (match List.rev qualifier with
+    | [] -> []
+    | _ :: outer -> scopes (List.rev outer))
   in
+  match path with
+  | [] -> None
+  | head :: rest -> (
+    match
+      List.find_opt
+        (fun scope -> Option.is_some (find (scope @ [head])))
+        (scopes node.qualifier)
+    with
+    | Some scope -> Some (find (scope @ path))
+    | None when Config.namespace_name node.namespace = Some head ->
+      Some (if rest = [] then None else find rest)
+    | None -> (
+      match rest with
+      | [] -> None
+      | _ :: _ ->
+        find_namespace_maps head |> Option.value ~default:[]
+        |> List.find_map (fun (namespace_map : namespace_map) ->
+            if Hashtbl.mem node.visible_packages namespace_map.package_name then
+              find_module_path ~package_root:namespace_map.package_root rest
+              |> Option.map Option.some
+            else None)))
+
+let resolved_dependencies ~find_module ~find_namespace_maps ~find_module_path
+    (node : module_node) =
+  let resolved =
+    node.raw_dependencies
+    |> List.map (fun dependency ->
+        ( dependency,
+          resolve_module_path ~find_module_path ~find_namespace_maps node
+            (String.split_on_char '.' dependency) ))
+  in
+  let names_module dependency =
+    List.exists
+      (fun (other, target) ->
+        String.starts_with ~prefix:(dependency ^ ".") other
+        &&
+        match target with
+        | Some (Some (Module _)) -> true
+        | Some (Some (Directory _)) | Some None | None -> false)
+      resolved
+  in
+  (* A directory named on its own, as by [open Ui], makes its modules what a
+     plain name may refer to. Unless it is one of the module's own
+     directories, whose maps it depends on anyway, or a path through it names
+     the module used, the module waits for all of the directory, since an
+     alias such as [module U = Ui] hides which one it uses. *)
+  let opened =
+    List.filter_map
+      (fun (_, target) ->
+        match target with
+        | Some (Some (Directory {package_root; qualifier; key = _}))
+          when package_root = node.package_root ->
+          Some qualifier
+        | Some (Some (Directory _ | Module _)) | Some None | None -> None)
+      resolved
+  in
+  let parsed =
+    resolved
+    |> List.concat_map (fun (dependency, target) ->
+        match target with
+        | Some (Some (Module key)) -> [key]
+        | Some (Some (Directory {package_root; qualifier; key})) ->
+          if
+            package_root = node.package_root
+            && is_prefix qualifier node.qualifier
+            || names_module dependency
+          then []
+          else [key]
+        | Some None -> []
+        | None ->
+          resolve_dependency ~find_module ~find_namespace_maps node dependency)
+  in
+  let in_opened_directories =
+    node.raw_dependencies
+    |> List.filter (fun dependency -> not (String.contains dependency '.'))
+    |> List.concat_map (fun name ->
+        List.filter_map
+          (fun qualifier ->
+            match
+              find_module_path ~package_root:node.package_root
+                (qualifier @ [name])
+            with
+            | Some (Module key) -> Some key
+            | Some (Directory _) | None -> None)
+          opened)
+  in
+  let parsed = parsed @ in_opened_directories in
   let implicit_namespace_entry =
     match node.namespace with
     | Config.Namespace_with_entry {name = namespace; entry}
-      when Source.module_name node.source_path = entry ->
+      when node.qualifier = [] && Source.module_name node.source_path = entry ->
       find_namespace_maps namespace
       |> Option.value ~default:[]
       |> List.find_map (fun (namespace_map : namespace_map) ->
@@ -169,6 +283,7 @@ let raw_dependencies ~build_dir ~parse_failed (module_ : Source.module_) =
 type initialized = {
   nodes: module_node list;
   namespace_maps: namespace_map list;
+  module_paths: (string, module_path_target) Hashtbl.t;
   build_state: Build_state.t;
   use_existing_ast_paths: string list;
 }
@@ -197,7 +312,7 @@ let initialize ~(root_config : Config.t) ~package_plans ~compile_assets
               module_
           in
           let compiler_base =
-            Source.compiler_basename package.compile_config module_.Source.name
+            Source.compiler_basename package.compile_config module_
           in
           if Option.is_none (Compile_assets.cmt compile_assets compiler_base)
           then
@@ -211,6 +326,7 @@ let initialize ~(root_config : Config.t) ~package_plans ~compile_assets
               package_root = package.root;
               source_path = module_.Source.implementation;
               namespace = package.compile_config.namespace;
+              qualifier = module_.Source.qualifier;
               visible_packages;
               raw_dependencies;
             }
@@ -235,52 +351,95 @@ let initialize ~(root_config : Config.t) ~package_plans ~compile_assets
              (Filename.concat previous.package_root previous.source_path)
              (Filename.concat node.package_root node.source_path)))
     nodes;
+  let module_paths = Hashtbl.create (List.length nodes) in
   let namespace_maps =
     package_plans
-    |> List.filter_map (fun (package : Package_plan.t) ->
-        let namespace = package.Package_plan.compile_config.namespace in
-        let namespace_details =
-          match namespace with
-          | Config.No_namespace -> None
-          | Config.Namespace name -> Some (name, name, None)
-          | Config.Namespace_with_entry {name; entry} ->
-            Some ("@" ^ name, name, Some entry)
+    |> List.concat_map (fun (package : Package_plan.t) ->
+        let config = package.Package_plan.compile_config in
+        let entry = Config.namespace_entry config.namespace in
+        let directories = Source.directories package.modules in
+        List.iter
+          (fun module_ ->
+            Hashtbl.replace module_paths
+              (module_path_key package.root
+                 (module_.Source.qualifier @ [module_.Source.name]))
+              (Module (Source.compiler_basename config module_)))
+          package.modules;
+        List.iter
+          (fun qualifier ->
+            Hashtbl.replace module_paths
+              (module_path_key package.root qualifier)
+              (Directory
+                 {
+                   package_root = package.root;
+                   qualifier;
+                   key = directory_map_key package.root qualifier;
+                 }))
+          directories;
+        (* A map depends on what it binds, so a module that needs a whole
+           namespace waits for every module in it. *)
+        let members qualifier =
+          Source.map_members ~entry package.modules qualifier
+          |> List.filter_map (fun name ->
+              match
+                Hashtbl.find_opt module_paths
+                  (module_path_key package.root (qualifier @ [name]))
+              with
+              | Some (Module key) -> Some key
+              | Some (Directory {key}) -> Some key
+              | None -> None)
+          |> List.sort_uniq String.compare
         in
-        namespace_details
-        |> Option.map (fun (compiler_name, name, namespace_entry) ->
-            let members =
-              Source.namespace_members ~entry:namespace_entry package.modules
-              |> List.map (fun module_ ->
-                  Source.compiler_basename package.compile_config
-                    module_.Source.name)
-              |> List.sort_uniq String.compare
-            in
-            {
-              key = namespace_map_key package.root;
-              compiler_name;
-              namespace = name;
-              package_name = package.name;
-              package_root = package.root;
-              members;
-            }))
+        let map ~key ~compiler_name ~qualifier =
+          {
+            key;
+            compiler_name;
+            namespace =
+              Option.value (Config.namespace_name config.namespace) ~default:"";
+            qualifier;
+            package_name = package.name;
+            package_root = package.root;
+            members = members qualifier;
+          }
+        in
+        let package_map =
+          Config.namespace_compiler_name config.namespace
+          |> Option.map (fun compiler_name ->
+              map
+                ~key:(namespace_map_key package.root)
+                ~compiler_name ~qualifier:[])
+          |> Option.to_list
+        in
+        package_map
+        @ List.map
+            (fun qualifier ->
+              map
+                ~key:(directory_map_key package.root qualifier)
+                ~compiler_name:(Source.directory_map_name config qualifier)
+                ~qualifier)
+            directories)
   in
   let namespace_maps_by_name = Hashtbl.create (List.length namespace_maps) in
   List.iter
     (fun (namespace_map : namespace_map) ->
-      let existing =
-        Hashtbl.find_opt namespace_maps_by_name namespace_map.namespace
-        |> Option.value ~default:[]
-      in
-      Hashtbl.replace namespace_maps_by_name namespace_map.namespace
-        (namespace_map :: existing))
+      if namespace_map.qualifier = [] then
+        let existing =
+          Hashtbl.find_opt namespace_maps_by_name namespace_map.namespace
+          |> Option.value ~default:[]
+        in
+        Hashtbl.replace namespace_maps_by_name namespace_map.namespace
+          (namespace_map :: existing))
     namespace_maps;
+  let find_module_path ~package_root path =
+    Hashtbl.find_opt module_paths (module_path_key package_root path)
+  in
   let source_graph_nodes =
     List.map
       (fun (node : module_node) ->
         ( node,
           resolved_dependencies ~find_module:(Hashtbl.find_opt by_key)
             ~find_namespace_maps:(Hashtbl.find_opt namespace_maps_by_name)
-            node ))
+            ~find_module_path node ))
       nodes
   in
   let build_state =
@@ -319,6 +478,7 @@ let initialize ~(root_config : Config.t) ~package_plans ~compile_assets
   {
     nodes;
     namespace_maps;
+    module_paths;
     build_state;
     use_existing_ast_paths = !use_existing_ast_paths;
   }
@@ -331,13 +491,14 @@ let find_cycle modules namespace_maps build_state =
     (fun (node : module_node) ->
       let key = node.key in
       let module_name = Source.module_name node.source_path in
+      let module_path = String.concat "." (node.qualifier @ [module_name]) in
       let display_name =
         match node.namespace with
         | Config.Namespace_with_entry {name = namespace; entry}
-          when entry <> module_name ->
-          namespace ^ "." ^ module_name
-        | Config.Namespace namespace -> namespace ^ "." ^ module_name
-        | Config.Namespace_with_entry _ | Config.No_namespace -> module_name
+          when node.qualifier <> [] || entry <> module_name ->
+          namespace ^ "." ^ module_path
+        | Config.Namespace namespace -> namespace ^ "." ^ module_path
+        | Config.Namespace_with_entry _ | Config.No_namespace -> module_path
       in
       Hashtbl.add nodes_by_key key
         {
@@ -355,7 +516,14 @@ let find_cycle modules namespace_maps build_state =
           key;
           package_root = namespace_map.package_root;
           source_path = None;
-          display_name = namespace_map.compiler_name;
+          display_name =
+            (match namespace_map.qualifier with
+            | [] -> namespace_map.compiler_name
+            | qualifier ->
+              String.concat "."
+                ((if namespace_map.namespace = "" then []
+                  else [namespace_map.namespace])
+                @ qualifier));
         })
     namespace_maps;
   let graph_nodes =

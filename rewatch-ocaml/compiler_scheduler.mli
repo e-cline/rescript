@@ -44,6 +44,7 @@ val create :
     publish_result) ->
   record_published_outputs:(source_kind:Source.source_kind -> string -> unit) ->
   post_build:(string -> post_build_task list) ->
+  published_ast:(string -> string) ->
   package_root:string ->
   is_local:bool ->
   mark_warning:(string -> unit) ->

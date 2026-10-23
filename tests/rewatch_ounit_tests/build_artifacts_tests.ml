@@ -163,8 +163,8 @@ let tests =
         (List.mem "A" result.removed_modules)
         "moving a source marks its module for recompilation";
       check
-        (Build_freshness.source_is_not_older_than_ast compile_assets ~root
-           ~source_mtimes:(Hashtbl.create 0) module_.implementation)
+        (Build_freshness.source_is_not_older_than_ast compile_assets ~config
+           ~root ~source_mtimes:(Hashtbl.create 0) module_.implementation)
         "a moved source cannot reuse the published AST for its old path");
   with_temp_dir (fun root ->
       let config_path = Filename.concat root "rescript.json" in

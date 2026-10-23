@@ -19,6 +19,7 @@ let () =
            Format_tests.tests;
            Native_watcher_tests.tests;
            Output_tests.tests;
+           Module_graph_tests.tests;
            Package_metadata_tests.tests;
            Project_context_tests.tests;
            Source_tests.tests;

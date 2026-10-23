@@ -148,15 +148,13 @@ let publish_compiler_artifacts ~artifact_dir ~ocaml_dir ~basename artifacts =
   with error ->
     raise (Compiler_scheduler.Publication_failure (error, !cmi_change))
 
-let namespace_task ~runtime ~build_dir ~ocaml_dir ~entry ~package_dirty ~force
-    namespace modules =
+let namespace_task ~runtime ~build_dir ~ocaml_dir ~package_dirty ~force
+    namespace members =
   let mlmap = Filename.concat build_dir (namespace ^ ".mlmap") in
   let contents =
     let buffer = Buffer.create 128 in
     Buffer.add_string buffer "randjbuildsystem\n";
-    Source.namespace_members ~entry modules
-    |> List.map (fun module_ -> module_.Source.name)
-    |> List.sort String.compare
+    members |> List.sort String.compare
     |> List.iter (fun name ->
         Buffer.add_string buffer name;
         Buffer.add_char buffer '\n');
@@ -247,7 +245,7 @@ let compile_request ~build_dir ~(config : Config.t) ~common_args
     (module_ : Source.module_) ~source_kind path =
   let args =
     Compiler_args.compiler_arguments_with_common ~config ~common_args
-      ~module_name:module_.name ~source_kind
+      ~module_name:module_.name ~qualifier:module_.qualifier ~source_kind
       ~has_interface:(Option.is_some module_.interface)
       ~path
   in
@@ -283,7 +281,8 @@ let publish ~build_dir ~ocaml_dir ~is_local ~(config : Config.t) ~has_interface
     File_util.ensure_dir (Filename.dirname build_source);
     File_util.copy_existing_file source build_source;
     File_util.copy_existing_file source
-      (Filename.concat ocaml_dir (Filename.basename path));
+      (Filename.concat ocaml_dir
+         (Source.published_basename config path ^ Filename.extension path));
     (match source_kind with
     | Source.Interface -> ()
     | Source.Implementation ->

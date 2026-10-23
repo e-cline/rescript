@@ -10,7 +10,7 @@ type cleanup_result = {
 
 val lib_path : string -> string -> string
 val relative_output_directory : string -> Config.package_spec -> string
-val published_ast_path : ocaml_dir:string -> string -> string
+val published_ast_path : config:Config.t -> ocaml_dir:string -> string -> string
 
 val generated_js_path : Config.t -> string -> Config.package_spec -> string
 

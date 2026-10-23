@@ -89,6 +89,7 @@ let dependency_state_tests _context =
       source_path = entry_source.implementation;
       namespace =
         Config.Namespace_with_entry {name = "Namespace"; entry = "Entry"};
+      qualifier = [];
       visible_packages = Hashtbl.create 0;
       raw_dependencies = [];
     }
@@ -98,6 +99,7 @@ let dependency_state_tests _context =
       key = Module_graph.namespace_map_key "root";
       compiler_name = "@Namespace";
       namespace = "Namespace";
+      qualifier = [];
       package_name = "package";
       package_root = "root";
       members = [];
@@ -110,6 +112,7 @@ let dependency_state_tests _context =
   check
     (Module_graph.resolved_dependencies ~find_module:(Hashtbl.find_opt modules)
        ~find_namespace_maps:(Hashtbl.find_opt namespace_maps)
+       ~find_module_path:(fun ~package_root:_ _ -> None)
        entry
     = [namespace_map.key])
     "namespace entry implicitly depends on its namespace map"

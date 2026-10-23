@@ -10,14 +10,14 @@ let tests =
   "warning_state_tests" >:: fun _context ->
   let state = Warning_state.create () in
   Warning_state.set state ~module_name:"Zed" ~package_root:"root"
-    ~path:"src/Zed.res" ~output:"warning: zed\n";
+    ~path:"src/Zed.res" ~published_asts:[] ~output:"warning: zed\n";
   Warning_state.set state ~module_name:"Alpha" ~package_root:"root"
-    ~path:"src/Alpha.res" ~output:"warning: alpha\n";
+    ~path:"src/Alpha.res" ~published_asts:[] ~output:"warning: alpha\n";
   check
     (outputs state = ["warning: alpha\n"; "warning: zed\n"])
     "stored warnings replay in module-name order";
   Warning_state.set state ~module_name:"Middle" ~package_root:"root"
-    ~path:"src/Middle.res" ~output:"warning: fresh\n";
+    ~path:"src/Middle.res" ~published_asts:[] ~output:"warning: fresh\n";
   check
     (outputs state = ["warning: alpha\n"; "warning: fresh\n"; "warning: zed\n"])
     "fresh and stored warnings share one deterministic order";
@@ -26,9 +26,10 @@ let tests =
     (outputs state = ["warning: fresh\n"; "warning: zed\n"])
     "a successfully recompiled path loses its stored warning";
   Warning_state.set state ~module_name:"Module" ~package_root:"root"
-    ~path:"src/Module.res" ~output:"warning: implementation\n";
+    ~path:"src/Module.res" ~published_asts:[]
+    ~output:"warning: implementation\n";
   Warning_state.set state ~module_name:"Module" ~package_root:"root"
-    ~path:"src/Module.resi" ~output:"warning: interface\n";
+    ~path:"src/Module.resi" ~published_asts:[] ~output:"warning: interface\n";
   Warning_state.retain_paths state [Filename.concat "root" "src/Module.resi"];
   check
     (outputs state = ["warning: interface\n"])

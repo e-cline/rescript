@@ -49,6 +49,7 @@ type scheduled_module = {
     source_kind:Source.source_kind -> string -> Process.result -> publish_result;
   record_published_outputs: source_kind:Source.source_kind -> string -> unit;
   post_build: string -> post_build_task list;
+  published_ast: string -> string;
   package_root: string;
   is_local: bool;
   mark_warning: string -> unit;
@@ -66,8 +67,8 @@ type candidate = {
 type scheduled_item = Module of scheduled_module | Namespace_barrier
 
 let create ~key ~dependencies ~source ~state ~cmi_path ~prepare ~compile
-    ~publish ~record_published_outputs ~post_build ~package_root ~is_local
-    ~mark_warning =
+    ~publish ~record_published_outputs ~post_build ~published_ast ~package_root
+    ~is_local ~mark_warning =
   {
     key;
     dependencies;
@@ -80,6 +81,7 @@ let create ~key ~dependencies ~source ~state ~cmi_path ~prepare ~compile
     publish;
     record_published_outputs;
     post_build;
+    published_ast;
     package_root;
     is_local;
     mark_warning;
@@ -235,7 +237,12 @@ let run ~poll ~warning_state ~compile_assets ~build_state ~candidates
           | warning ->
             mark_had_warnings ();
             Warning_state.set warning_state ~module_name:scheduled.key
-              ~package_root:scheduled.package_root ~path ~output:warning;
+              ~package_root:scheduled.package_root ~path
+              ~published_asts:
+                (List.map scheduled.published_ast
+                   (scheduled.source.Source.implementation
+                   :: Option.to_list scheduled.source.Source.interface))
+              ~output:warning;
             if scheduled.is_local then scheduled.mark_warning path;
             None)
         else (
@@ -272,11 +279,10 @@ let run ~poll ~warning_state ~compile_assets ~build_state ~candidates
       false
   in
   let invalidate_persistent_freshness (scheduled : scheduled_module) =
-    let ocaml_dir = Filename.dirname scheduled.cmi_path in
     scheduled.source.Source.implementation
     :: Option.to_list scheduled.source.Source.interface
     |> List.iter (fun source ->
-        let path = Build_artifacts.published_ast_path ~ocaml_dir source in
+        let path = scheduled.published_ast source in
         File_util.remove_file path;
         Compile_assets.refresh_ast compile_assets
           ~source:(Filename.concat scheduled.package_root source)

@@ -2,6 +2,7 @@ type entry = {
   module_name: string;
   package_root: string;
   path: string;
+  published_asts: string list;
   output: string;
 }
 
@@ -11,9 +12,9 @@ let create () = Hashtbl.create 16
 
 let key ~package_root ~path = Filename.concat package_root path
 
-let set state ~module_name ~package_root ~path ~output =
+let set state ~module_name ~package_root ~path ~published_asts ~output =
   Hashtbl.replace state (key ~package_root ~path)
-    {module_name; package_root; path; output}
+    {module_name; package_root; path; published_asts; output}
 
 let remove state ~package_root ~path =
   Hashtbl.remove state (key ~package_root ~path)

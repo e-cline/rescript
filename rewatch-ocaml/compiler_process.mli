@@ -19,12 +19,13 @@ val namespace_task :
   runtime:string ->
   build_dir:string ->
   ocaml_dir:string ->
-  entry:string option ->
   package_dirty:bool ->
   force:bool ->
   string ->
-  Source.module_ list ->
+  string list ->
   Compiler_scheduler.namespace_task option
+(** The job compiling the namespace map of that unit name, binding the given
+    member names, if the map or its outputs changed. *)
 
 val compile_request :
   build_dir:string ->

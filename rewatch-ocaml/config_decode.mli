@@ -37,6 +37,10 @@ val dependency_alias :
   (string * Yojson.Safe.t) list ->
   Config_types.dependency list
 
+val source_segments : string -> string list
+(** The directories of a source dir, without "." segments: "./src/Ui/" is
+    [["src"; "Ui"]]. *)
+
 val parse_sources :
   string -> (string * Yojson.Safe.t) list -> Config_types.source list
 

@@ -4,7 +4,8 @@ let source_requires_parse source_modified artifact_modified =
   | Some _, None -> true
   | None, _ -> false
 
-let source_is_not_older_than_ast compile_assets ~root ~source_mtimes path =
+let source_is_not_older_than_ast compile_assets ~config ~root ~source_mtimes
+    path =
   let absolute = Filename.concat root path in
   let source_modified =
     match Hashtbl.find_opt source_mtimes path with
@@ -16,7 +17,7 @@ let source_is_not_older_than_ast compile_assets ~root ~source_mtimes path =
     | Some ast -> Some ast.modified
     | None ->
       let published_ast =
-        Build_artifacts.published_ast_path
+        Build_artifacts.published_ast_path ~config
           ~ocaml_dir:(Build_artifacts.lib_path root "ocaml")
           path
       in

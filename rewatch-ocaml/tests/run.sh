@@ -2275,27 +2275,40 @@ grep 'Namespace SharedNamespace is provided by both' \
 grep 'namespace-one' "$namespace_collision/output.log" >/dev/null
 grep 'namespace-two' "$namespace_collision/output.log" >/dev/null
 
-# A qualified source's directories are modules, so discovery rejects trees
-# that would give two modules one name, before anything is compiled.
+# A qualified source's directories are modules: src/Ui/Button.res is
+# Ui.Button, beside Admin.Button, and its JavaScript keeps its file's name.
 qualified_sources="$work/qualified-sources"
-mkdir -p "$qualified_sources/src/Ui" "$qualified_sources/src/Admin"
-printf '{"name":"qualified-sources","sources":{"dir":"src","subdirs":"qualified"}}\n' \
+mkdir -p "$qualified_sources/src/Ui/Controls" "$qualified_sources/src/Admin"
+printf '{"name":"qualified-sources","namespace":"Qualified","sources":{"dir":"src","subdirs":"qualified"}}\n' \
   >"$qualified_sources/rescript.json"
-printf 'let value = 1\n' >"$qualified_sources/src/App.res"
+printf 'let value = Ui.Button.value + Admin.Button.value + Ui.Controls.Toggle.value\n' \
+  >"$qualified_sources/src/App.res"
 printf 'let value = 1\n' >"$qualified_sources/src/Ui/Button.res"
-printf 'let value = 1\n' >"$qualified_sources/src/Admin/Button.res"
-if "$port" build "$qualified_sources" \
-  >"$qualified_sources/build.log" 2>&1; then
-  echo "qualified sources built before the build graph supports them" >&2
+# Button is its sibling Ui.Button, not Admin.Button.
+printf 'let value = Button.value + 1\n' >"$qualified_sources/src/Ui/Input.res"
+# Input is found in the directory above.
+printf 'let value = Input.value + 1\n' \
+  >"$qualified_sources/src/Ui/Controls/Toggle.res"
+printf 'let value = 10\n' >"$qualified_sources/src/Admin/Button.res"
+printf '{"type":"module"}\n' >"$qualified_sources/package.json"
+"$port" build "$qualified_sources" >"$qualified_sources/build.log" 2>&1 || {
+  cat "$qualified_sources/build.log" >&2
   exit 1
-fi
-grep -F '"subdirs": "qualified", which the build' \
-  "$qualified_sources/build.log" >/dev/null
-if grep -F 'Duplicate module name' "$qualified_sources/build.log" >/dev/null
-then
-  echo "same-named files in qualified directories were duplicates" >&2
-  exit 1
-fi
+}
+for output in App Ui/Button Ui/Input Ui/Controls/Toggle Admin/Button; do
+  test -f "$qualified_sources/src/$output.js"
+done
+grep -F '"./Ui/Controls/Toggle.js"' "$qualified_sources/src/App.js" >/dev/null
+test -f "$qualified_sources/lib/ocaml/Button-Ui-Qualified.cmi"
+test -f "$qualified_sources/lib/ocaml/Button-Admin-Qualified.cmi"
+test -f "$qualified_sources/lib/ocaml/Controls-Ui-Qualified.cmi"
+node -e '
+  import(require("node:url").pathToFileURL(process.argv[1]).href).then(app => {
+    if (app.value !== 14) throw new Error("App.value is " + app.value);
+  });
+' "$(native_path "$qualified_sources/src/App.js")"
+"$port" build "$qualified_sources" >"$qualified_sources/build.log" 2>&1
+grep -F 'Compiled 0 modules' "$qualified_sources/build.log" >/dev/null
 printf 'let value = 1\n' >"$qualified_sources/src/Ui.res"
 if "$port" build "$qualified_sources" \
   >"$qualified_sources/build.log" 2>&1; then

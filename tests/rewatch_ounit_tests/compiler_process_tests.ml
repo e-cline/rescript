@@ -17,7 +17,7 @@ let publication_tests _context =
       File_util.ensure_dir (Filename.concat ocaml_dir "Ns.cmj");
       let namespace_task =
         Compiler_process.namespace_task ~runtime:"unused" ~build_dir ~ocaml_dir
-          ~entry:None ~package_dirty:true ~force:false "Ns" []
+          ~package_dirty:true ~force:false "Ns" []
         |> Option.get
       in
       let result =
@@ -52,7 +52,7 @@ let publication_tests _context =
       check
         (Option.is_some
            (Compiler_process.namespace_task ~runtime:"unused" ~build_dir
-              ~ocaml_dir ~entry:None ~package_dirty:false ~force:false "Ns" []))
+              ~ocaml_dir ~package_dirty:false ~force:false "Ns" []))
         "a published namespace map that differs from membership is rebuilt";
       Test_support.write_file
         (Filename.concat ocaml_dir "Ns.mlmap")
@@ -60,7 +60,7 @@ let publication_tests _context =
       check
         (Option.is_some
            (Compiler_process.namespace_task ~runtime:"unused" ~build_dir
-              ~ocaml_dir ~entry:None ~package_dirty:false ~force:true "Ns" []))
+              ~ocaml_dir ~package_dirty:false ~force:true "Ns" []))
         "retained namespace publication dirtiness forces a retry")
 
 let restore_environment name previous =

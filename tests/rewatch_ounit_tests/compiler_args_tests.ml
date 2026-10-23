@@ -33,8 +33,62 @@ let adjacent_positions flag values =
 
 let position value pairs = List.assoc_opt value pairs
 
-let tests =
-  "compiler_args_tests" >:: fun _context ->
+(* The namespace flags of [arguments], in order. *)
+let namespace_flags arguments =
+  let rec loop = function
+    | (("-bs-ns" | "-bs-open-ns" | "-open") as flag) :: value :: rest ->
+      flag :: value :: loop rest
+    | _ :: rest -> loop rest
+    | [] -> []
+  in
+  loop arguments
+
+let qualified_tests _context =
+  Test_support.with_temp_dir "rewatch-ocaml-compiler-args-" (fun root ->
+      let source path =
+        let path = Test_support.path root path in
+        write_file path "let value = 1\n";
+        path
+      in
+      File_util.ensure_dir
+        (File_util.path_of_parts root ["node_modules"; "@rescript/runtime"]);
+      let nested = source "src/Ui/Controls/Button.res" in
+      let top_level = source "src/App.res" in
+      let flags_with namespace path =
+        write_file
+          (Filename.concat root "rescript.json")
+          (Printf.sprintf
+             {|{"name":"qualified-args",%s"sources":{"dir":"src","subdirs":"qualified"}}|}
+             namespace);
+        namespace_flags (compiler_args path)
+      in
+      assert_equal ~printer:(String.concat " ")
+        [
+          "-bs-open-ns";
+          "MyApp";
+          "-bs-open-ns";
+          "Ui-MyApp";
+          "-bs-ns";
+          "Controls-Ui-MyApp";
+        ]
+        (flags_with {|"namespace":"MyApp",|} nested);
+      assert_equal ~printer:(String.concat " ") ["-bs-ns"; "MyApp"]
+        (flags_with {|"namespace":"MyApp",|} top_level);
+      assert_equal ~printer:(String.concat " ")
+        ["-bs-open-ns"; "Ui"; "-bs-ns"; "Controls-Ui"]
+        (flags_with "" nested);
+      assert_equal ~printer:(String.concat " ")
+        [
+          "-bs-open-ns";
+          "@MyApp";
+          "-bs-open-ns";
+          "Ui-@MyApp";
+          "-bs-ns";
+          "Controls-Ui-@MyApp";
+        ]
+        (flags_with {|"namespace":"MyApp","namespace-entry":"App",|} nested))
+
+let flat_tests _context =
   let root = Filename.temp_file "rewatch-ocaml-compiler-args-" "" in
   Sys.remove root;
   Unix.mkdir root 0o755;
@@ -185,3 +239,7 @@ let tests =
              Test_support.contains_text message
                "Expected to find dependent package outside of app")
           "compiler-args does not search above a workspace dependency boundary"))
+
+let tests =
+  "compiler_args_tests"
+  >::: ["flat" >:: flat_tests; "qualified" >:: qualified_tests]

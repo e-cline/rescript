@@ -305,11 +305,6 @@ let active_sources (config : Config.t) ~prod ~features =
     (source_is_active ~prod ~all_features ~active_features)
     config.sources
 
-let namespace_members ~entry modules =
-  modules
-  |> List.filter (fun module_ -> Some module_.name <> entry)
-  |> List.filter (fun module_ -> is_non_exotic_module_name module_.name)
-
 let scan_sources ~on_missing (config : Config.t) ~prod ~features
     ~collect_inventory ~collect_gentype =
   let active_features =
@@ -536,15 +531,104 @@ let ast_path path =
   Filename.remove_extension path
   ^ if Filename.extension path = ".resi" then ".iast" else ".ast"
 
-let compiler_basename config module_name =
-  Config.namespaced_module_name config.Config.namespace module_name
+(* The qualifier of the module at [path], read from the qualified source of
+   [config] that contains it, as discovery computes it. *)
+let qualifier_of_path (config : Config.t) path =
+  let rec strip prefix segments =
+    match (prefix, segments) with
+    | [], segments -> Some segments
+    | first :: prefix, second :: segments when first = second ->
+      strip prefix segments
+    | _ :: _, _ -> None
+  in
+  let directories = Config_decode.source_segments (Filename.dirname path) in
+  config.sources
+  |> List.find_map (fun (source : Config.source) ->
+      match source.subdirs with
+      | Config.Qualified_subdirs ->
+        strip (Config_decode.source_segments source.dir) directories
+      | Config.Own_dir | Config.All_subdirs -> None)
+  |> Option.fold ~none:[] ~some:(List.map String.capitalize_ascii)
+
+(* The compilation unit of the namespace map of a qualified directory, named
+   like a module of the directory above it: [Ui-MyApp] for src/Ui, and
+   [Controls-Ui-MyApp] for src/Ui/Controls. Each line `M` of a map names unit
+   [M-<map>], so these maps nest, and a module of the directory is named after
+   its map as a package's module is after the package namespace. *)
+let directory_map_name (config : Config.t) qualifier =
+  String.concat "-"
+    (List.rev qualifier
+    @ Option.to_list (Config.namespace_compiler_name config.namespace))
+
+(* The namespace a module of directory [qualifier] is compiled in: the
+   package's for a top-level module, else its directory's map. *)
+let module_namespace (config : Config.t) = function
+  | [] -> Config.namespace_compiler_name config.namespace
+  | qualifier -> Some (directory_map_name config qualifier)
+
+let compiler_basename config (module_ : module_) =
+  match module_.qualifier with
+  | [] -> Config.namespaced_module_name config.Config.namespace module_.name
+  | qualifier -> module_.name ^ "-" ^ directory_map_name config qualifier
 
 (* Compiler artifacts preserve the source filename's case, while dependency
    graph module names are capitalized. Keep those two names distinct. *)
 let compiler_asset_basename config path =
   let basename = path |> Filename.basename |> Filename.remove_extension in
-  match config.Config.namespace with
-  | Config.No_namespace -> basename
-  | Config.Namespace namespace -> basename ^ "-" ^ namespace
-  | Config.Namespace_with_entry {name; entry} ->
-    if entry = module_name path then basename else basename ^ "-@" ^ name
+  match qualifier_of_path config path with
+  | _ :: _ as qualifier -> basename ^ "-" ^ directory_map_name config qualifier
+  | [] -> (
+    match config.Config.namespace with
+    | Config.No_namespace -> basename
+    | Config.Namespace namespace -> basename ^ "-" ^ namespace
+    | Config.Namespace_with_entry {name; entry} ->
+      if entry = module_name path then basename else basename ^ "-@" ^ name)
+
+(* lib/ocaml holds a copy of each source and its AST under one name. A module
+   of a qualified source uses its unit's, since its file name need not be
+   unique in the package. *)
+let published_basename config path =
+  match qualifier_of_path config path with
+  | [] -> path |> Filename.basename |> Filename.remove_extension
+  | _ :: _ -> compiler_asset_basename config path
+
+let module_path (module_ : module_) =
+  String.concat "." (module_.qualifier @ [module_.name])
+
+(* Every qualified directory that holds a module, outermost first. *)
+let directories modules =
+  modules
+  |> List.concat_map (fun module_ ->
+      let rec prefixes acc = function
+        | [] -> []
+        | directory :: rest ->
+          let prefix = acc @ [directory] in
+          prefix :: prefixes prefix rest
+      in
+      prefixes [] module_.qualifier)
+  |> List.sort_uniq compare
+
+(* The names that the namespace map of directory [qualifier] binds: its
+   modules, except the namespace entry and exotic names, and the directories
+   directly below it. *)
+let map_members ~entry modules qualifier =
+  let depth = List.length qualifier in
+  let rec take count = function
+    | _ when count = 0 -> []
+    | [] -> []
+    | first :: rest -> first :: take (count - 1) rest
+  in
+  modules
+  |> List.filter_map (fun module_ ->
+      if module_.qualifier = qualifier then
+        if
+          (qualifier = [] && Some module_.name = entry)
+          || not (is_non_exotic_module_name module_.name)
+        then None
+        else Some module_.name
+      else if
+        List.length module_.qualifier > depth
+        && take depth module_.qualifier = qualifier
+      then Some (List.nth module_.qualifier depth)
+      else None)
+  |> List.sort_uniq String.compare

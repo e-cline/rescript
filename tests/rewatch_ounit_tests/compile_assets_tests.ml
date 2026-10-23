@@ -87,17 +87,21 @@ let tests =
         = Some ast)
         "published AST state is addressable by source path";
       let source_path = Filename.concat "src" "Example.res" in
+      Test_support.write_file
+        (Filename.concat root "rescript.json")
+        {|{"name":"compile-assets","sources":"src"}|};
+      let config = Config.load_root root in
       let ast_modified = (Unix.stat ast).Unix.st_mtime in
       let source_mtimes = Hashtbl.create 1 in
       Hashtbl.add source_mtimes source_path ast_modified;
       check
-        (Build_freshness.source_is_not_older_than_ast state ~root ~source_mtimes
-           source_path)
+        (Build_freshness.source_is_not_older_than_ast state ~config ~root
+           ~source_mtimes source_path)
         "equal source and AST timestamps follow Rust and require parsing";
       Hashtbl.replace source_mtimes source_path (ast_modified -. 1.);
       check
         (not
-           (Build_freshness.source_is_not_older_than_ast state ~root
+           (Build_freshness.source_is_not_older_than_ast state ~config ~root
               ~source_mtimes source_path))
         "an AST newer than its source is parse-clean";
       check

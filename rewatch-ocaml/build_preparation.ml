@@ -170,14 +170,14 @@ let run ~(root_config : Config.t) ~prod ~features ~warn_error ~filter ~watch
               paths
               |> List.filter (fun path ->
                   Build_freshness.source_is_not_older_than_ast compile_assets
-                    ~root:package.root ~source_mtimes:package.source_mtimes path)
+                    ~config:package.compile_config ~root:package.root
+                    ~source_mtimes:package.source_mtimes path)
             in
             if dirty_paths <> [] then
               Output.debug ~verbosity:attempt.verbosity
                 ("Generating AST for module: "
-                ^ Source.compiler_basename package.compile_config
-                    module_.Source.name);
-            let group = package.root ^ "\000" ^ module_.Source.name in
+                ^ Source.compiler_basename package.compile_config module_);
+            let group = package.root ^ "\000" ^ Source.module_path module_ in
             List.map (fun path -> (package, path, group)) dirty_paths))
   in
   let parse_completed =
@@ -222,6 +222,7 @@ let run ~(root_config : Config.t) ~prod ~features ~warn_error ~filter ~watch
   List.iter
     (Build_session.add_namespace_map attempt.session)
     graph.namespace_maps;
+  Build_session.add_module_paths attempt.session graph.module_paths;
   let nodes = graph.nodes in
   let namespace_maps = graph.namespace_maps in
   let build_state = graph.build_state in

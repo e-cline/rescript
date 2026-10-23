@@ -18,10 +18,11 @@ let run ~(package : Package_plan.t) ~(prepared : Build_session.prepared)
         match attempt.freshness_mode with
         | Build_attempt.Reuse_freshness -> forced
         | Build_attempt.Initialize_freshness ->
-          Hashtbl.mem removed_module_names (Source.module_name path)
+          Hashtbl.mem removed_module_names
+            (Source.module_name (Source.published_basename config path))
           || forced
-          || Build_freshness.source_is_not_older_than_ast compile_assets ~root
-               ~source_mtimes:package.source_mtimes path)
+          || Build_freshness.source_is_not_older_than_ast compile_assets ~config
+               ~root ~source_mtimes:package.source_mtimes path)
   in
   let dirty_parse_path_set = Hashtbl.create (List.length dirty_parse_paths) in
   List.iter
@@ -39,8 +40,8 @@ let run ~(package : Package_plan.t) ~(prepared : Build_session.prepared)
         module_.Source.implementation :: Option.to_list module_.Source.interface
       in
       if List.exists (Hashtbl.mem dirty_parse_path_set) paths then (
-        Hashtbl.replace dirty_modules module_.Source.name ();
-        let key = Source.compiler_basename config module_.Source.name in
+        Hashtbl.replace dirty_modules (Source.module_path module_) ();
+        let key = Source.compiler_basename config module_ in
         (Build_state.find_exn build_state key).compile_dirty <- true))
     package.modules;
   let parse_paths_to_run =
@@ -79,12 +80,14 @@ let run ~(package : Package_plan.t) ~(prepared : Build_session.prepared)
         let ast = Source.ast_path path in
         if is_local && stderr <> "" then
           Build_attempt.register_cleanup attempt (fun () ->
-              let path = Filename.concat ocaml_dir (Filename.basename ast) in
+              let path =
+                Build_artifacts.published_ast_path ~config ~ocaml_dir path
+              in
               File_util.remove_file path;
               Compile_assets.refresh_ast compile_assets ~source:absolute_path
                 ~path);
         let published_ast =
-          Build_artifacts.published_ast_path ~ocaml_dir path
+          Build_artifacts.published_ast_path ~config ~ocaml_dir path
         in
         File_util.copy_existing_file
           (Filename.concat build_dir ast)
@@ -93,7 +96,8 @@ let run ~(package : Package_plan.t) ~(prepared : Build_session.prepared)
           ~path:published_ast;
         File_util.copy_existing_file
           (Filename.concat config.root path)
-          (Filename.concat ocaml_dir (Filename.basename path));
+          (Filename.concat ocaml_dir
+             (Source.published_basename config path ^ Filename.extension path));
         if is_local && stderr <> "" then
           Build_session.mark_parse_pending attempt.session pending_path
         else Build_session.clear_parse_pending attempt.session pending_path

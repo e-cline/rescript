@@ -26,6 +26,7 @@ type t = {
   global_modules: (string, Module_graph.module_node) Hashtbl.t;
   namespace_maps: (string, Module_graph.namespace_map) Hashtbl.t;
   namespace_maps_by_name: (string, Module_graph.namespace_map list) Hashtbl.t;
+  module_paths: (string, Module_graph.module_path_target) Hashtbl.t;
   mutable graph_cycle: cycle_cache;
   package_plans: (string, Package_plan.t) Hashtbl.t;
   source_index: (string, source_reference) Hashtbl.t;
@@ -42,6 +43,7 @@ let create ~warning_state =
     global_modules = Hashtbl.create 64;
     namespace_maps = Hashtbl.create 16;
     namespace_maps_by_name = Hashtbl.create 16;
+    module_paths = Hashtbl.create 64;
     graph_cycle = Unknown_cycle;
     package_plans = Hashtbl.create 32;
     source_index = Hashtbl.create 64;
@@ -88,12 +90,22 @@ let find_namespace_maps session name =
 let add_namespace_map session namespace_map =
   Hashtbl.add session.namespace_maps namespace_map.Module_graph.key
     namespace_map;
-  let existing =
-    find_namespace_maps session namespace_map.namespace
-    |> Option.value ~default:[]
-  in
-  Hashtbl.replace session.namespace_maps_by_name namespace_map.namespace
-    (namespace_map :: existing)
+  (* Only a package namespace is found by name; a qualified directory's map is
+     reached through the module paths of its package. *)
+  if namespace_map.qualifier = [] then
+    let existing =
+      find_namespace_maps session namespace_map.namespace
+      |> Option.value ~default:[]
+    in
+    Hashtbl.replace session.namespace_maps_by_name namespace_map.namespace
+      (namespace_map :: existing)
+
+let add_module_paths session module_paths =
+  Hashtbl.iter (Hashtbl.replace session.module_paths) module_paths
+
+let find_module_path session ~package_root path =
+  Hashtbl.find_opt session.module_paths
+    (Module_graph.module_path_key package_root path)
 
 let find_namespace_map session key = Hashtbl.find session.namespace_maps key
 
