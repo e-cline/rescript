@@ -112,7 +112,8 @@ let scan_source ~root (source : Config.source) ~discover_modules ~on_missing
     let absolute = Filename.concat root relative in
     let coverage table requested =
       if requested then
-        Traversal_coverage.admit table identity ~recursive:source.recurse
+        Traversal_coverage.admit table identity
+          ~recursive:(Config.recurses source)
       else Traversal_coverage.Skip
     in
     let discovery = coverage visited_dirs discover_requested in

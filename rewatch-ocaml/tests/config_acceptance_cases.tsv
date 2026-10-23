@@ -11,6 +11,8 @@ sources	subdirs-true	accept	{"name":"config-shape","sources":{"dir":"src","subdi
 sources	subdirs-empty	accept	{"name":"config-shape","sources":{"dir":"src","subdirs":[]}}
 sources	subdirs-shorthand	accept	{"name":"config-shape","sources":{"dir":"src","subdirs":["nested"]}}
 sources	subdirs-qualified	accept	{"name":"config-shape","sources":{"dir":"src","subdirs":[{"dir":"nested"}]}}
+sources	subdirs-qualified-mode	reject/accept	{"name":"config-shape","sources":{"dir":"src","subdirs":"qualified"}}
+sources	subdirs-qualified-overlap	reject	{"name":"config-shape","sources":[{"dir":"src","subdirs":"qualified"},{"dir":"src/nested"}]}
 sources	type-null	accept	{"name":"config-shape","sources":{"dir":"src","type":null}}
 sources	type-dev	accept	{"name":"config-shape","sources":{"dir":"src","type":"dev"}}
 sources	type-custom	accept	{"name":"config-shape","sources":{"dir":"src","type":"custom"}}

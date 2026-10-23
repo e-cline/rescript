@@ -10,7 +10,22 @@ type package_spec = {
   suffix: string option;
 }
 
-type source = {dir: string; recurse: bool; is_dev: bool; feature: string option}
+(** Which directories below a source's own one it includes. A list of subdirs
+    becomes separate sources, so the source itself is [Own_dir]. *)
+type subdirs =
+  | Own_dir
+  | All_subdirs  (** ["subdirs": true]: files are top-level modules. *)
+  | Qualified_subdirs
+      (** ["subdirs": "qualified"]: each directory below it is a module
+          containing its files and directories, so src/Ui/Button.res is
+          [Ui.Button]. *)
+
+type source = {
+  dir: string;
+  subdirs: subdirs;
+  is_dev: bool;
+  feature: string option;
+}
 
 type dependency = {name: string; features: string list option}
 

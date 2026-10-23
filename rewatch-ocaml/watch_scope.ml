@@ -208,11 +208,13 @@ let discover ~root ~prod ~features ~filter =
                   if package_root = root_config.root then filter else None
                 in
                 sources :=
-                  {directory; recursive = source.recurse; filter} :: !sources;
+                  {directory; recursive = Config.recurses source; filter}
+                  :: !sources;
                 let existing =
                   nearest_existing_directory config.root directory
                 in
-                add_path existing (existing = directory && source.recurse))
+                add_path existing
+                  (existing = directory && Config.recurses source))
           with Source.Error _ -> ()));
     let deduplicated_paths = Hashtbl.create (List.length !paths) in
     List.iter

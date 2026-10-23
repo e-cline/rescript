@@ -114,6 +114,20 @@ let discover ~(root_config : Config.t) ~(workspace_config : Config.t) ~prod
               path)
           ~display_root:root_config.root
       in
+      (* Until the build graph names modules by their directories, a
+         qualified source would compile as a flat one. *)
+      if
+        List.exists
+          (fun (source : Config.source) ->
+            source.subdirs = Config.Qualified_subdirs)
+          config.sources
+      then
+        raise
+          (Project_context.Error
+             (Printf.sprintf
+                "Could not initialize build: Package %s uses \"subdirs\": \
+                 \"qualified\", which the build doesn't support yet."
+                config.name));
       let modules = discovery.modules in
       let compile_config =
         let config = with_gentype_source_dirs discovery.gentype_dirs config in

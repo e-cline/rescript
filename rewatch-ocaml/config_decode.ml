@@ -283,7 +283,7 @@ let rec sources_of_json path inherited_dir forced_dev inherited_feature =
     [
       {
         dir = Filename.concat inherited_dir dir;
-        recurse = false;
+        subdirs = Own_dir;
         is_dev = Option.value forced_dev ~default:false;
         feature = inherited_feature;
       };
@@ -309,30 +309,72 @@ let rec sources_of_json path inherited_dir forced_dev inherited_feature =
       | None -> inherited_feature
       | Some value -> Some (string path "feature" value)
     in
-    let recurse, children =
+    let subdirs, children =
       match optional_member "subdirs" fields with
-      | None -> (false, [])
-      | Some (`Bool value) -> (value, [])
+      | None | Some (`Bool false) -> (Own_dir, [])
+      | Some (`Bool true) -> (All_subdirs, [])
+      | Some (`String "qualified") -> (Qualified_subdirs, [])
       | Some (`List values) ->
-        ( false,
+        ( Own_dir,
           List.concat_map
             (sources_of_json path dir (Some is_dev) feature)
             values )
       | Some _ ->
         fail path
-          "field \"subdirs\" in \"sources\" must be a boolean or an array"
+          "field \"subdirs\" in \"sources\" must be a boolean, an array, or \
+           \"qualified\""
     in
-    {dir; recurse; is_dev; feature} :: children
+    {dir; subdirs; is_dev; feature} :: children
   | _ ->
     fail path
       "field \"sources\" must be a string, an object, or an array of them"
 
+let source_segments dir =
+  String.split_on_char '/' dir
+  |> List.concat_map (String.split_on_char '\\')
+  |> List.filter (fun segment -> segment <> "" && segment <> ".")
+
+let rec is_prefix prefix segments =
+  match (prefix, segments) with
+  | [], _ -> true
+  | first :: prefix, second :: segments ->
+    first = second && is_prefix prefix segments
+  | _ :: _, [] -> false
+
+(* A file below a qualified source has one module path, the one its
+   directories give it there. Another source that reaches the same file would
+   give it a second one, so qualified sources may not overlap any other. *)
+let validate_qualified_sources path sources =
+  let overlap (first : source) (second : source) =
+    let first_segments = source_segments first.dir in
+    let second_segments = source_segments second.dir in
+    first_segments = second_segments
+    || (is_prefix first_segments second_segments && first.subdirs <> Own_dir)
+    || (is_prefix second_segments first_segments && second.subdirs <> Own_dir)
+  in
+  sources
+  |> List.iter (fun (qualified : source) ->
+      if qualified.subdirs = Qualified_subdirs then
+        sources
+        |> List.iter (fun (other : source) ->
+            if other != qualified && overlap qualified other then
+              fail path
+                (Printf.sprintf
+                   "source \"%s\" overlaps the qualified source \"%s\", whose \
+                    subdirectories are already part of it. Give qualified \
+                    sources directories of their own."
+                   other.dir qualified.dir)))
+
 let parse_sources path fields =
-  match optional_member "sources" fields with
-  | None -> []
-  | Some (`List values) ->
-    List.concat_map (sources_of_json path "" None None) values
-  | Some value -> sources_of_json path "" None None value
+  let sources =
+    match optional_member "sources" fields with
+    | None -> []
+    | Some (`List values) ->
+      List.concat_map (sources_of_json path "" None None) values
+    | Some value -> sources_of_json path "" None None value
+  in
+  validate_qualified_sources path sources;
+  sources
 
 let nested_unknown_fields parent supported = function
   | `Assoc fields ->

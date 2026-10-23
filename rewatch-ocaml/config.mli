@@ -1,5 +1,8 @@
 include module type of Config_types
 
+val recurses : source -> bool
+(** Whether the source includes the directories below its own. *)
+
 val namespace_name : namespace -> string option
 val namespace_entry : namespace -> string option
 val namespace_compiler_name : namespace -> string option

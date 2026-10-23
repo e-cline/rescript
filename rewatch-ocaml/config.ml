@@ -2,6 +2,11 @@ include Config_types
 
 open Config_decode
 
+let recurses (source : source) =
+  match source.subdirs with
+  | Own_dir -> false
+  | All_subdirs | Qualified_subdirs -> true
+
 let namespace_name = function
   | No_namespace -> None
   | Namespace name | Namespace_with_entry {name; entry = _} -> Some name
@@ -50,7 +55,7 @@ let source_is_dev (config : t) relative_path =
         | Some directory ->
           if
             comparable source_parent = comparable directory
-            || source.recurse
+            || recurses source
                && String.starts_with
                     ~prefix:(Filename.concat directory "" |> comparable)
                     (comparable source_parent)

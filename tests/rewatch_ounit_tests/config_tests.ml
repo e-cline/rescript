@@ -102,6 +102,64 @@ let loading_tests =
         (Config.source_is_dev config "src/dev/Foo.res")
         "development scope follows source declaration order";
       write_file path
+        {|{"name":"qualified","sources":[{"dir":"src","subdirs":"qualified"},{"dir":"lib","subdirs":[{"dir":"ui","subdirs":"qualified"}]}]}|};
+      let config = Config.load path in
+      check
+        (List.map
+           (fun (source : Config.source) -> (source.dir, source.subdirs))
+           config.sources
+        = [
+            ("src", Config.Qualified_subdirs);
+            ("lib", Config.Own_dir);
+            ("lib/ui", Config.Qualified_subdirs);
+          ])
+        "\"subdirs\": \"qualified\" makes a qualified source, also in a list";
+      write_file (Filename.concat root "src/Ui/Button.res") "let value = 1\n";
+      check
+        (Config.source_is_dev
+           {
+             config with
+             sources =
+               [
+                 {
+                   dir = "src";
+                   subdirs = Config.Qualified_subdirs;
+                   is_dev = true;
+                   feature = None;
+                 };
+               ];
+           }
+           "src/Ui/Button.res")
+        "a qualified source includes the files below its own directory";
+      check
+        (rejects path
+           {|{"name":"x","sources":{"dir":"src","subdirs":"nested"}}|}
+           "must be a boolean, an array, or \"qualified\"")
+        "any other subdirs string is rejected";
+      List.iter
+        (fun (sources, description) ->
+          check
+            (rejects path
+               (Printf.sprintf {|{"name":"x","sources":%s}|} sources)
+               "overlaps the qualified source \"src\"")
+            description)
+        [
+          ( {|[{"dir":"src","subdirs":"qualified"},{"dir":"src/Ui","type":"dev"}]|},
+            "a source below a qualified source is rejected" );
+          ( {|[{"dir":"./src/Ui/"},{"dir":"src","subdirs":"qualified"}]|},
+            "overlaps are found whatever the order and spelling of dirs" );
+          ( {|[{"dir":"src","subdirs":"qualified"},{"dir":"src"}]|},
+            "a qualified directory listed again is rejected" );
+          ( {|[{"dir":".","subdirs":true},{"dir":"src","subdirs":"qualified"}]|},
+            "a recursive source above a qualified source is rejected" );
+        ];
+      write_file path
+        {|{"name":"x","sources":[{"dir":".","subdirs":["src"]},{"dir":"src/Ui","subdirs":"qualified"},{"dir":"src/Admin","subdirs":"qualified"}]}|};
+      check
+        (List.length (Config.load path).sources = 4)
+        "a qualified source may sit below a source without subdirs, and beside \
+         another qualified source";
+      write_file path
         {|{"name":"@testrepo/deprecated-config","namespace":true}|};
       let config = Config.load path in
       check
