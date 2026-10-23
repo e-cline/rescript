@@ -1841,17 +1841,14 @@ let read_signature modname filename =
 (* Return the CRC of the interface of the given compilation unit *)
 
 let imports () =
-  let dont_record_crc_unit = !((Clflags.current ()).dont_record_crc_unit) in
-  match dont_record_crc_unit with
-  | None ->
-    Consistbl.extract (String_set.elements !(imported_units ())) (crc_units ())
-  | Some x ->
-    Consistbl.extract
-      (String_set.fold
-         (fun m acc -> if m = x then acc else m :: acc)
-         !(imported_units ())
-         [])
-      (crc_units ())
+  let unrecorded =
+    Option.to_list !((Clflags.current ()).dont_record_crc_unit)
+    @ !((Clflags.current ()).opened_namespaces)
+  in
+  Consistbl.extract
+    (String_set.elements !(imported_units ())
+    |> List.filter (fun m -> not (List.mem m unrecorded)))
+    (crc_units ())
 
 (* Save a signature to a file *)
 

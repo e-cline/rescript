@@ -83,33 +83,33 @@ try {
   await namespaceMap("Admin-MyApp", ["Button"]);
 
   await compile("src/Domain", "User", [
-    "-open",
+    "-bs-open-ns",
     "MyApp",
     "-bs-ns",
     "Domain-MyApp",
   ]);
   await compile("src/Ui", "Button", [
-    "-open",
+    "-bs-open-ns",
     "MyApp",
     "-bs-ns",
     "Ui-MyApp",
   ]);
   await compile("src/Ui", "Input", [
-    "-open",
+    "-bs-open-ns",
     "MyApp",
     "-bs-ns",
     "Ui-MyApp",
   ]);
   await compile("src/Ui/Controls", "Button", [
-    "-open",
+    "-bs-open-ns",
     "MyApp",
-    "-open",
+    "-bs-open-ns",
     "Ui-MyApp",
     "-bs-ns",
     "Controls-Ui-MyApp",
   ]);
   await compile("src/Admin", "Button", [
-    "-open",
+    "-bs-open-ns",
     "MyApp",
     "-bs-ns",
     "Admin-MyApp",
@@ -135,6 +135,12 @@ try {
   assert.equal(app.admin, "admin:ui-button:admin");
   assert.equal(app.icon, "icon");
 
+  // A new member of the package map changes MyApp.cmi. The qualified units
+  // that open MyApp don't record its CRC, so App still compiles against
+  // them without rebuilding them.
+  await namespaceMap("MyApp", ["Admin", "App", "Domain", "Extra", "Ui"]);
+  await compile("src", "Extra", ["-bs-ns", "MyApp"]);
+  await compile("src", "App", ["-bs-ns", "MyApp"]);
 } finally {
   await fs.rm(libDir, { recursive: true, force: true });
 }

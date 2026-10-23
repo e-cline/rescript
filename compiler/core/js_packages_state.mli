@@ -28,6 +28,9 @@ val make_runtime : unit -> unit
 
 val set_package_map : string -> unit
 
+val open_namespace : string -> unit
+(** [-bs-open-ns]: open a namespace map without recording its CRC. *)
+
 val get_packages_info : unit -> Js_packages_info.t
 
 val update_npm_package_path : string -> unit

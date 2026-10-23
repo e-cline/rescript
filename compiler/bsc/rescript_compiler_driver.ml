@@ -332,6 +332,10 @@ let command_line_flags () : (string * Bsc_args.spec * string) array =
       string_call Js_packages_state.set_package_map,
       "*internal* Set package map, not only set package name but also use it \
        as a namespace" );
+    ( "-bs-open-ns",
+      string_call Js_packages_state.open_namespace,
+      "*internal* Open the namespace map <module> without recording its CRC, \
+       for a module in a qualified source directory below it" );
     ( "-as-pp",
       unit_call (fun _ ->
           (Js_config.current ()).as_pp := true;

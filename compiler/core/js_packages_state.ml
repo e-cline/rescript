@@ -53,6 +53,11 @@ let set_package_map module_name =
   (Clflags.current ()).open_modules :=
     module_name :: !((Clflags.current ()).open_modules)
 
+let open_namespace module_name =
+  let flags = Clflags.current () in
+  flags.opened_namespaces := module_name :: !(flags.opened_namespaces);
+  flags.open_modules := module_name :: !(flags.open_modules)
+
 let update_npm_package_path s =
   let state = current () in
   state.packages_info <-

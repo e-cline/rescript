@@ -24,6 +24,10 @@ type t = {
   color: Misc.Color.setting option ref;
   assume_no_mli: mli_status ref;
   dont_record_crc_unit: string option ref;
+  opened_namespaces: string list ref;
+      (** Namespace maps opened by [-bs-open-ns]. As for
+          [dont_record_crc_unit], their CRCs are not recorded, so adding a
+          member to a map doesn't invalidate the interfaces that open it. *)
   bs_gentype: bool ref;
   jsx_preserve: bool ref;
       (** Keep JSX in the output ([-bs-jsx-preserve]); read by translcore, and
