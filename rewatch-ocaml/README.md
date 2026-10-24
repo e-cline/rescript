@@ -133,8 +133,9 @@ These are intentional:
 - `rescript.json` maps that the build system interprets reject duplicate keys
   instead of using the last one.
 - A `namespace-entry` without a namespace is an error.
-- `"subdirs": "qualified"` (qualified source directories) is only
-  implemented here; Rust rewatch rejects it as an invalid `subdirs` value.
+- `"subdirs": "qualified"` ([qualified source
+  directories](#qualified-source-directories)) is only implemented here; Rust
+  rewatch rejects it with an error naming the setting.
 - Configuration errors use the compiler-style form `path: message`, and JSON
   syntax errors use `path:line:column: message`. Messages name the field and
   the accepted values instead of the parser's internal types.

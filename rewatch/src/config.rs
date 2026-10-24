@@ -762,6 +762,7 @@ impl Config {
         let raw_value = serde_json::from_str::<serde_json::Value>(config_str).ok();
         if let Some(value) = raw_value.as_ref() {
             validate_package_specs_value(value)?;
+            validate_sources_value(value)?;
         }
 
         let mut deserializer = serde_json::Deserializer::from_str(config_str);
@@ -1302,6 +1303,26 @@ fn expand_feature(
     Ok(())
 }
 
+/// Qualified source directories (`"subdirs": "qualified"`) are only implemented
+/// by `rescript`, the OCaml build system. Name the setting instead of reporting
+/// that `subdirs` matches none of its forms.
+fn validate_sources_value(value: &serde_json::Value) -> Result<()> {
+    fn visit(sources: &serde_json::Value) -> Result<()> {
+        match sources {
+            serde_json::Value::Array(sources) => sources.iter().try_for_each(visit),
+            serde_json::Value::Object(source) => match source.get("subdirs") {
+                Some(serde_json::Value::String(subdirs)) if subdirs == "qualified" => Err(anyhow!(
+                    "\"subdirs\": \"qualified\" in \"sources\" (qualified source directories) is not supported by rescript-rust; build with rescript instead"
+                )),
+                Some(subdirs) => visit(subdirs),
+                None => Ok(()),
+            },
+            _ => Ok(()),
+        }
+    }
+    value.get("sources").map_or(Ok(()), visit)
+}
+
 fn validate_package_specs_value(value: &serde_json::Value) -> Result<()> {
     let specs = match value.get("package-specs") {
         Some(specs) => specs,
@@ -1464,6 +1485,21 @@ pub mod tests {
         let spec = specs.first().unwrap();
         assert_eq!(spec.module, PackageModule::EsModule);
         assert_eq!(config.get_suffix(spec), ".mjs");
+    }
+
+    #[test]
+    fn test_qualified_subdirs_are_rejected_by_name() {
+        for json in [
+            r#"{"name": "qualified", "sources": {"dir": "src", "subdirs": "qualified"}}"#,
+            r#"{"name": "qualified", "sources": [{"dir": "lib", "subdirs": [{"dir": "ui", "subdirs": "qualified"}]}]}"#,
+        ] {
+            let error = Config::new_from_json_string(json).unwrap_err().to_string();
+            assert!(
+                error.contains("\"subdirs\": \"qualified\"")
+                    && error.contains("not supported by rescript-rust"),
+                "{error}"
+            );
+        }
     }
 
     #[test]

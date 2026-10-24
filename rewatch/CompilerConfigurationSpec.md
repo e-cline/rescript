@@ -53,7 +53,7 @@ recommended for new projects.
 | public           | array of string          |        |     [_]      |
 | resources        | array of string          |        |     [_]      |
 | subdirs          | boolean                  |        |     [x]      |
-| subdirs          | string                   |        |     [_]      |
+| subdirs          | string                   | `"qualified"` is rejected; `rescript` implements it |     [_]      |
 | subdirs          | array of string          |        |     [x]      |
 | subdirs          | Source                   |        |     [_]      |
 | subdirs          | array of Source          |        |     [x]      |
