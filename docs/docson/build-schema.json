@@ -292,6 +292,10 @@
                 {
                   "type": "boolean",
                   "description": "true means traverse to all subdirs"
+                },
+                {
+                  "enum": ["qualified"],
+                  "description": "Traverse all subdirs and make each directory a module: src/Ui/Button.res is Ui.Button, so files in different directories can share a name. A module sees the modules of its own and enclosing directories by their plain names. Supported by rescript, not rescript-rust."
                 }
               ]
             },

@@ -934,6 +934,12 @@ let build_schema_tests _context =
   assert_has_keys (one_of "sourceItem" 0)
     (Config_decode.supported_fields Config_decode.source_fields)
     "Source";
+  check
+    (one_of "sourceItem" 0 |> member "subdirs" |> member "oneOf" |> to_list
+    |> List.exists (fun form ->
+        member "enum" form = `List [`String "qualified"]))
+    "Source key `subdirs` accepts \"qualified\" in \
+     docs/docson/build-schema.json";
   assert_has_keys (one_of "bs-dependency" 1)
     (Config_decode.supported_fields Config_decode.dependency_fields)
     "Dependency";

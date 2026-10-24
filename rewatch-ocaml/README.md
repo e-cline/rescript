@@ -81,6 +81,51 @@ rewatch-only changes don't.
 External PPXs, `js-post-build` hooks, and `--after-build` remain subprocesses
 under the process owners described below.
 
+## Qualified source directories
+
+A source with `"subdirs": "qualified"` makes each directory below it a module
+that holds its files and directories:
+
+```json
+{
+  "name": "my-app",
+  "namespace": "MyApp",
+  "sources": [{ "dir": "src", "subdirs": "qualified" }]
+}
+```
+
+```text
+src/App.res                  App
+src/Ui/Button.res            Ui.Button
+src/Ui/Controls/Button.res   Ui.Controls.Button
+src/Admin/Button.res         Admin.Button
+```
+
+- A module sees the modules of its own directory, then of each directory
+  around it, by their plain names: in `src/Ui/Controls/Button.res`, `Input` is
+  `Ui.Input` and `App` is `App`. Any other module is named by its path, such
+  as `Admin.Button`, or `MyApp.Admin.Button` from another package.
+- The source's own directory (`src`) is not part of module paths, and files
+  in it are top-level modules, as in a flat source.
+- Directory names are capitalized like file names, and must then be valid
+  module names. A file and a directory may not define the same module
+  (`src/Ui.res` beside `src/Ui/`), and neither may two directories whose
+  names differ only in case.
+- A qualified source may not overlap another source, including one that marks
+  part of it as `"type": "dev"`.
+- JavaScript keeps each file's path: `src/Ui/Button.res` compiles to
+  `src/Ui/Button.res.js` (or its out-of-source equivalent), and imports go
+  straight to that file.
+
+Each module is compiled as its own unit, named after it, its directories
+innermost first and the package namespace: `Button-Controls-Ui-MyApp`. Each
+directory is a namespace map, such as `Ui-MyApp.mlmap` binding `Button`,
+`Controls` and `Input`; maps are compile-time aliases and emit no JavaScript.
+A module opens the package map and the maps of the directories above its own
+with `-bs-open-ns`, outermost first, and is compiled in its own directory's map
+with `-bs-ns`. `compiler-args`, editor analysis and genType follow the same
+rules.
+
 ## Differences from Rust rewatch
 
 These are intentional:
