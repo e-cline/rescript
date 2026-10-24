@@ -192,7 +192,10 @@ constructor:
 The "is a literal case" test is the smaller of two equivalent expressions: the
 disjunction of `x === literal` over the literal cases, or the conjunction of
 the negated payload checks (with a payload check replaced by the literal
-disjunction where a literal overlaps it).
+disjunction where a literal overlaps it). A `switch` whose arms name no
+literal case still tests the literals first when one of them would pass the
+check of a payload arm, such as `@as("lit")` beside a `string` arm, so that
+it reaches the default arm.
 
 - Implementation: `lam_compile.ml:compile_switch`,
   `ast_untagged_variants.ml:Dynamic_checks.is_a_literal_case`.
@@ -227,12 +230,13 @@ number, integral or not.
 
 ### 9. `null` and arrays are not objects
 
-`typeof null` and `typeof []` are `"object"`. The object case never receives
-`null` when the variant has an `@as(null)` case, and never receives an array
-when the variant has an array or tuple case: the two-arm form adds the checks
-of rule 8, and the `switch (typeof x)` form is preceded by
-`x === null` / `Array.isArray(x)` guards that send those values to the default
-arm when their own arm is absent.
+`typeof null` and `typeof []` are `"object"`, and so is the `typeof` of a
+class instance. The object case never receives `null` when the variant has an
+`@as(null)` case, and never receives a value of another instance case (array,
+tuple or class): the two-arm form adds the checks of rule 8, and the
+`switch (typeof x)` form is preceded by `x === null`, `Array.isArray(x)` and
+`x instanceof C` guards that send those values to the default arm when their
+own arm is absent.
 
 | Declaration | `switch` arms | Value | Arm |
 | --- | --- | --- | --- |
@@ -241,9 +245,10 @@ arm when their own arm is absent.
 | | `GObject(_)`, `_` | `[]`, `null` | `_` |
 
 - Implementation: `lam_compile.ml:compile_untagged_cases` (`needs_null_guard`,
-  `needs_array_guard`), `Dynamic_checks.add_runtime_type_check`.
-- Tests: `spec_test` rule 9; `UntaggedVariants.res` (`ObjectAndNull`, `Json`).
-- Shaped by #6219, #7303, #8253, #8255, #8279.
+  `unmatched_instances`), `Dynamic_checks.add_runtime_type_check`.
+- Tests: `spec_test` rule 9; `UntaggedVariants.res` (`ObjectAndNull`, `Json`);
+  `tests/tests/src/untagged_default_arm_test.res`.
+- Shaped by #6219, #7303, #8253, #8255, #8279, #8995.
 
 ### 10. Values outside every case
 
@@ -291,7 +296,8 @@ as `Primitive_option.some(v)` otherwise. An untagged variant cannot hold
 | an abstract type without it, a type variable, `option<_>` | yes |
 | a type whose declaration is not on the load path | yes |
 
-An `@as(null)` case does not prevent unboxing; `Some(N)` is `null`.
+An `@as(null)` case does not prevent unboxing; `Some(N)` is `null`. `Some(U)` of an `@as(undefined)` case is boxed, as a constant
+too, so it stays distinct from `None`.
 
 | Declaration | `Some(v)` |
 | --- | --- |
@@ -313,7 +319,7 @@ abstract types `@notUndefined`; `Blob.t` and `File.t` are not marked.
 - Tests: `spec_test` rule 12; `UntaggedVariants.res`
   (`OptionUnboxingHeuristic`); `tests/tests/src/option_wrapping_test.res`;
   `tests/build_tests/option_transitive_dependency`.
-- Shaped by #6222, #6233, #8719.
+- Shaped by #6222, #6233, #8719, #8954.
 
 ### 13. `@notUndefined`
 
@@ -338,8 +344,10 @@ value. An inline-record field whose runtime name equals the tag field is an
 error.
 
 An interface and its implementation must agree on `@unboxed`, on `@tag`, and
-on the literal of every nullary case. They are not compared on the `@as` of
-cases with a payload (see Known bugs).
+on the literal of every nullary case and of every tagged case with a payload.
+The `@as` of an untagged case with a payload does not change its
+representation (rule 2) and is not compared. Type declarations in messages
+print the `@as` of nullary and tagged cases.
 
 - Implementation: `variant_layout.ml:layout_from_type_variant`,
   `ast_untagged_variants.ml:process_tag_name`, `check_tag_field_conflicts`;
@@ -348,28 +356,13 @@ cases with a payload (see Known bugs).
   `variant_tag_overlaps_with_field.res`, `UntaggedInvalidVariantTagAnnotation.res`,
   `UntaggedImplIntf.res`; `tests/build_tests/super_errors_multi/fixtures/`
   `Iface_unboxed_variant_mismatch`, `Iface_tag_name_mismatch`,
-  `Iface_variant_representation_mismatch`.
-- Shaped by #6498, #6513, #6669, #7875.
+  `Iface_variant_representation_mismatch`; `variant_payload_tag_mismatch.res`.
+- Shaped by #6498, #6513, #6669, #7875, #8956.
 
 ## Known bugs
 
 Each was observed with the compiler built from this tree; the programs are
 compiled with `bsc` and run in Node 25.
-
-**`Some` of a constant `undefined` case is `None`.** Rule 12 boxes `Some(v)`
-for a variant with an `@as(undefined)` case, but a constant argument skips
-the boxing.
-
-```rescript
-@unboxed type u = | @as(undefined) U | V(string)
-let x: option<u> = Some(U)                       // let x = undefined;
-@inline(never) let mk = (v: u): option<u> => Some(v)
-Console.log2(x == None, mk(U) == None)           // true false
-```
-
-`lambda.ml:const_some_none_depth` returns "not a none" for every
-`Const_constructor`, including one whose literal is `undefined`; that this is
-the cause is conjectured, not established.
 
 **Overlapping instance classes follow declaration order** (#8938).
 
@@ -388,20 +381,6 @@ are one type, so a value of one can be wrapped in the case of another.
 @unboxed type ta = I8(Int8Array.t) | U8(Uint8Array.t)
 let f = v => switch v { | I8(_) => "i8" | U8(_) => "u8" }
 Console.log(f(I8(Uint8Array.fromArray([1]))))   // u8
-```
-
-**Payload-case tags are not compared across a signature.** Rule 14 compares
-only the literals of nullary cases.
-
-```rescript
-module M: {
-  type t = A({x: int}) | C({x: int})
-  let a: t
-} = {
-  type t = | @as("C") A({x: int}) | @as("A") C({x: int})
-  let a = A({x: 1})
-}
-Console.log(switch M.a { | M.A(_) => "A" | M.C(_) => "C" })   // C
 ```
 
 ## Open questions
