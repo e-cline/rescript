@@ -24,7 +24,7 @@ val cleanup_stale :
   ast_sources:Compile_assets.ast_source list ->
   source_files:string list ->
   present_source_files:string list ->
-  on_removed_module:(string -> unit) ->
+  on_removed_module:(string list -> unit) ->
   on_deferred_artifact:(string -> unit) ->
   root:string ->
   is_local:bool ->

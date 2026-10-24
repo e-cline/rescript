@@ -592,6 +592,32 @@ let published_basename config path =
   | [] -> path |> Filename.basename |> Filename.remove_extension
   | _ :: _ -> compiler_asset_basename config path
 
+(* The names that a consumer's AST header may record for the module at
+   [path]. A qualified module is reached by any path ending in it from the
+   directory a consumer sits in, through the package namespace, or through
+   an alias of one of its directories, so each prefix of those counts. *)
+let dependency_names (config : Config.t) path =
+  let name = module_name path in
+  match qualifier_of_path config path with
+  | [] -> [name]
+  | qualifier ->
+    let path = qualifier @ [name] in
+    let rec suffixes = function
+      | [] -> []
+      | _ :: rest as all -> all :: suffixes rest
+    in
+    let rec prefixes = function
+      | [] -> []
+      | first :: rest -> [first] :: List.map (List.cons first) (prefixes rest)
+    in
+    suffixes path
+    @ (Config.namespace_name config.namespace
+      |> Option.map (fun namespace -> namespace :: path)
+      |> Option.to_list)
+    |> List.concat_map prefixes
+    |> List.map (String.concat ".")
+    |> List.sort_uniq String.compare
+
 let module_path (module_ : module_) =
   String.concat "." (module_.qualifier @ [module_.name])
 

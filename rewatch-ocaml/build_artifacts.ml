@@ -149,6 +149,17 @@ let cleanup_stale ~ocaml_files ~ast_sources ~source_files ~present_source_files
           |> fun source -> Hashtbl.replace current_sources source ()))
     modules;
   let stale_ast_basenames = Hashtbl.create 8 in
+  (* The source each published AST was made from, to name a removed module as
+     its consumers do. *)
+  let removed_sources = Hashtbl.create 8 in
+  List.iter
+    (fun (ast_source : Compile_assets.ast_source) ->
+      Project_context.relative_to_opt root ast_source.source_path
+      |> Option.iter (fun source ->
+          Hashtbl.replace removed_sources
+            (Filename.basename ast_source.ast_path)
+            source))
+    ast_sources;
   let removed_output_paths = Hashtbl.create 8 in
   List.iter
     (fun (ast_source : Compile_assets.ast_source) ->
@@ -273,7 +284,10 @@ let cleanup_stale ~ocaml_files ~ast_sources ~source_files ~present_source_files
           || Filename.check_suffix basename ".iast"
         then (
           let module_name = Source.module_name basename in
-          on_removed_module module_name;
+          on_removed_module
+            (match Hashtbl.find_opt removed_sources basename with
+            | Some source -> Source.dependency_names config source
+            | None -> [module_name]);
           removed_modules := module_name :: !removed_modules);
         File_util.remove_file path;
         working_paths basename

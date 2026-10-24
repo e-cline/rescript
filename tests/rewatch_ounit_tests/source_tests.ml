@@ -350,7 +350,28 @@ let qualified_tests _context =
         "an interface pairs only with the implementation in its directory";
       check
         (List.length (discover config ~filter:"^Button\\.res$" ()) = 3)
-        "a filter matches same-named files in every directory");
+        "a filter matches same-named files in every directory";
+      write_file
+        (Filename.concat root "rescript.json")
+        {|{"name":"qualified","namespace":"MyApp","sources":[{"dir":"src","subdirs":"qualified"},"lib"]}|};
+      let config = Config.load (Filename.concat root "rescript.json") in
+      assert_equal ~printer:(String.concat ", ")
+        [
+          "Button";
+          "Controls";
+          "Controls.Button";
+          "MyApp";
+          "MyApp.Ui";
+          "MyApp.Ui.Controls";
+          "MyApp.Ui.Controls.Button";
+          "Ui";
+          "Ui.Controls";
+          "Ui.Controls.Button";
+        ]
+        (Source.dependency_names config "src/Ui/Controls/Button.res");
+      check
+        (Source.dependency_names config "lib/Button.res" = ["Button"])
+        "a module of a flat source is named by its name alone");
   Test_support.with_temp_dir "rewatch-ocaml-qualified-" (fun root ->
       ignore (qualified_project root ["src/App.res"; "src/ui-kit/Button.res"]);
       write_file

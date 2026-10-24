@@ -82,6 +82,12 @@ val compiler_asset_basename : Config.t -> string -> string
 val published_basename : Config.t -> string -> string
 (** The name of a source's copy, and its AST's, in lib/ocaml. *)
 
+val dependency_names : Config.t -> string -> string list
+(** The dependency names that a consumer of the module at a source path may
+    record: its name for a module of a flat source, and for
+    src/Ui/Button.res in namespace MyApp [Button], [MyApp], [MyApp.Ui],
+    [MyApp.Ui.Button], [Ui] and [Ui.Button]. *)
+
 val module_path : module_ -> string
 (** [Ui.Controls.Button] for src/Ui/Controls/Button.res. *)
 

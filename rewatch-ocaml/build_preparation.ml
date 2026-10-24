@@ -78,8 +78,9 @@ let run ~(root_config : Config.t) ~prod ~features ~warn_error ~filter ~watch
         (Compile_assets.ast_sources previous_compile_assets package.ocaml_dir)
       ~root:package.root ~source_files:package.source_files
       ~present_source_files:package.present_source_files
-      ~on_removed_module:invalidate_removed_module ~on_deferred_artifact
-      ~is_local:package.is_local package.compile_config package.modules
+      ~on_removed_module:(List.iter invalidate_removed_module)
+      ~on_deferred_artifact ~is_local:package.is_local package.compile_config
+      package.modules
   in
   (* Outputs written under the previous package-specs are removed before the
      package is cleaned, because the new specs no longer name them. *)

@@ -2329,6 +2329,79 @@ tr '\\' '/' <"$qualified_sources/build.log" | \
   grep -F 'Directory src/ui-kit in the qualified source "src" is not a valid module name' \
   >/dev/null
 
+# Removing a qualified module recompiles the modules that name it, whichever
+# path they use: Input names src/Ui/Button.res as Button.
+rm -r "$qualified_sources/src/ui-kit"
+"$port" build "$qualified_sources" >"$qualified_sources/build.log" 2>&1
+rm "$qualified_sources/src/Ui/Button.res"
+if "$port" build "$qualified_sources" \
+  >"$qualified_sources/build.log" 2>&1; then
+  echo "a build without a qualified module its siblings use succeeded" >&2
+  exit 1
+fi
+tr '\\' '/' <"$qualified_sources/build.log" | \
+  grep -F 'src/Ui/Input.res' >/dev/null
+grep -F 'The module or file Button can' "$qualified_sources/build.log" >/dev/null
+
+# Watch mode follows files and directories that are added, moved and
+# removed in a qualified source.
+qualified_watch="$work/qualified-watch"
+mkdir -p "$qualified_watch/src/Ui"
+printf '{"name":"qualified-watch","namespace":"Watch","sources":{"dir":"src","subdirs":"qualified"}}\n' \
+  >"$qualified_watch/rescript.json"
+printf 'let value = Ui.Button.value\n' >"$qualified_watch/src/App.res"
+printf 'let value = 1\n' >"$qualified_watch/src/Ui/Button.res"
+printf 'let value = Button.value + 1\n' >"$qualified_watch/src/Ui/Input.res"
+qualified_watch_log="$qualified_watch/watch.log"
+"$port" watch "$qualified_watch" >"$qualified_watch_log" 2>&1 &
+qualified_watch_pid=$!
+background_pids="$background_pids $qualified_watch_pid"
+qualified_watch_failed() {
+  echo "qualified watch: $1" >&2
+  cat "$qualified_watch_log" >&2
+  kill -TERM "$qualified_watch_pid" 2>/dev/null || true
+  wait "$qualified_watch_pid" 2>/dev/null || true
+  exit 1
+}
+wait_for_file "$qualified_watch/src/App.js" ||
+  qualified_watch_failed "no initial build"
+wait_for_initial_build "$qualified_watch_log" ||
+  qualified_watch_failed "no initial build"
+# A new directory becomes a module with its own map.
+mkdir "$qualified_watch/src/Admin"
+printf 'let value = 10\n' >"$qualified_watch/src/Admin/Button.res"
+wait_for_file "$qualified_watch/lib/ocaml/Admin-Watch.cmi" ||
+  qualified_watch_failed "the new directory got no map"
+wait_for_file "$qualified_watch/src/Admin/Button.js" ||
+  qualified_watch_failed "the new directory's module was not compiled"
+# Moved to Admin, Input's Button is Admin.Button.
+mv "$qualified_watch/src/Ui/Input.res" "$qualified_watch/src/Admin/Input.res"
+wait_for_file "$qualified_watch/src/Admin/Input.js" ||
+  qualified_watch_failed "the moved module was not compiled"
+wait_for_file_gone "$qualified_watch/src/Ui/Input.js" ||
+  qualified_watch_failed "the moved module's old output remained"
+grep -F '"./Button.js"' "$qualified_watch/src/Admin/Input.js" >/dev/null ||
+  qualified_watch_failed "the moved module does not use its new sibling"
+# Without Ui.Button, App fails, and the now empty Ui loses its map.
+rm "$qualified_watch/src/Ui/Button.res"
+wait_for_text "$qualified_watch_log" 'The module or file Ui can' ||
+  qualified_watch_failed "App compiled without Ui.Button"
+wait_for_file_gone "$qualified_watch/lib/ocaml/Ui-Watch.cmi" ||
+  qualified_watch_failed "the empty directory kept its map"
+printf 'let value = Admin.Input.value + 31\n' >"$qualified_watch/src/App.res"
+wait_for_text "$qualified_watch/src/App.js" '"./Admin/Input.js"' ||
+  qualified_watch_failed "App did not recover"
+# Removing a directory removes its modules' outputs and its map.
+printf 'let value = 42\n' >"$qualified_watch/src/App.res"
+wait_for_text "$qualified_watch/src/App.js" '42' ||
+  qualified_watch_failed "App was not rebuilt"
+rm -r "$qualified_watch/src/Admin"
+wait_for_file_gone "$qualified_watch/src/Admin/Button.js" ||
+  qualified_watch_failed "the removed directory's outputs remained"
+wait_for_file_gone "$qualified_watch/lib/ocaml/Admin-Watch.cmi" ||
+  qualified_watch_failed "the removed directory kept its map"
+stop_watch "$qualified_watch" "$qualified_watch_pid"
+
 "$port" build "$source_map"
 test -f "$source_map/src/Main.js.map"
 test -f "$source_map/lib/bs/compiler-info.json"
