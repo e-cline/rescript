@@ -19,15 +19,34 @@ let chop_extension_safe (dir, s) =
 
 let dump (dir, s) = Node_filename.concat dir s
 
+(* [path] without "." segments, and without ".." segments after a directory. *)
+let normalize path =
+  let rec loop acc = function
+    | [] -> List.rev acc
+    | "." :: rest -> loop acc rest
+    | ".." :: rest -> (
+      match acc with
+      | directory :: acc when directory <> ".." -> loop acc rest
+      | _ -> loop (".." :: acc) rest)
+    | segment :: rest -> loop (segment :: acc) rest
+  in
+  String.split_on_char '/' path |> loop [] |> String.concat "/"
+
 let to_cmt ~(config : Config.t) ~output_file_relative (dir, s) =
   let open Filename in
-  concat
-    (output_file_relative |> dirname)
-    ((dir, s) |> chop_extension_safe |> dump)
-  ^ (match config.namespace with
-    | None -> ""
-    | Some name -> "-" ^ name)
-  ^ ".cmt"
+  let source =
+    concat
+      (output_file_relative |> dirname)
+      ((dir, s) |> chop_extension_safe |> dump)
+  in
+  match Qualified_modules.unit_of_source ~config (normalize source) with
+  | Some unit_name -> concat (dirname source) unit_name ^ ".cmt"
+  | None ->
+    source
+    ^ (match config.namespace with
+      | None -> ""
+      | Some name -> "-" ^ name)
+    ^ ".cmt"
 
 (* Import paths are emitted inside single-quoted JavaScript/TypeScript string
    literals and also repeated in line comments. The AST stores their semantic

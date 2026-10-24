@@ -382,6 +382,10 @@ let command_line_flags () : (string * Bsc_args.spec * string) array =
       string_call Gentype_config.add_source_dir,
       "*internal* Register a gentype source directory relative to the project \
        root (repeatable)" );
+    ( "-bs-gentype-qualified-source-dir",
+      string_call Gentype_config.add_qualified_source_dir,
+      "*internal* Register a gentype qualified source directory relative to \
+       the project root (repeatable)" );
     ( "-bs-gentype-dep-path",
       string_call Gentype_config.add_dep_path,
       "*internal* Register a gentype dependency install path: \

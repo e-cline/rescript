@@ -163,7 +163,12 @@ end
 
 let rec dep_to_string dep =
   match dep with
-  | External name -> name |> Scoped_package.remove_generated_module
+  | External name ->
+    (* A qualified module such as Ui.Button is named Ui_Button. *)
+    name |> Scoped_package.remove_generated_module
+    |> String.map (function
+      | '.' -> '_'
+      | c -> c)
   | Internal resolved_name -> resolved_name |> Resolved_name.to_string
   | Dot (d, s) -> dep_to_string d ^ "_" ^ s
 

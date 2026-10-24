@@ -136,32 +136,61 @@ let resolve_module ~(config : Config.t) ~import_extension ~output_file_relative
     module_name
     |> Import_path.from_module ~dir:Filename.current_dir_name ~import_extension
   in
-  if Sys.file_exists module_name_res_file then candidate
-  else
-    match module_name |> apply ~resolver ~use_bs_dependencies with
-    | None -> candidate
-    | Some (resolved_module_dir, case, bs_dependencies) ->
-      (* e.g. "dst" in case of dst/ModuleName.res *)
-      let walk_up_output_dir =
-        output_file_relative_dir |> path_to_list
-        |> List.map (fun _ -> Filename.parent_dir_name)
-        |> fun l ->
-        match l with
-        | [] -> ""
-        | _ :: rest -> rest |> List.fold_left ( +++ ) Filename.parent_dir_name
-      in
-      let from_output_dir_to_module_dir =
-        (* e.g. "../dst" *)
-        match bs_dependencies with
-        | true -> resolved_module_dir
-        | false -> walk_up_output_dir +++ resolved_module_dir
-      in
-      (* e.g. import "../dst/ModuleName.ext" *)
-      (match case = Uppercase with
-        | true -> module_name
-        | false -> module_name |> Module_name.uncapitalize)
-      |> Import_path.from_module ~dir:from_output_dir_to_module_dir
-           ~import_extension
+  match
+    Qualified_modules.source ~config (Module_name.to_string module_name)
+  with
+  | Some source ->
+    (* e.g. import "../Ui/Button.ext" for Ui.Button from src/Admin *)
+    let rec relative from to_ =
+      match (from, to_) with
+      | first :: from, second :: to_ when first = second -> relative from to_
+      | _ -> List.map (fun _ -> Filename.parent_dir_name) from @ to_
+    in
+    let segments path =
+      String.split_on_char '/' path
+      |> List.concat_map (String.split_on_char '\\')
+      |> List.filter (fun segment ->
+          segment <> "" && segment <> Filename.current_dir_name)
+    in
+    let dir =
+      match
+        relative
+          (segments output_file_relative_dir)
+          (segments (Filename.dirname source))
+      with
+      | first :: rest when first = Filename.parent_dir_name ->
+        List.fold_left ( +++ ) first rest
+      | segments -> List.fold_left ( +++ ) Filename.current_dir_name segments
+    in
+    Filename.basename source |> Module_name.from_string_unsafe
+    |> Import_path.from_module ~dir ~import_extension
+  | None -> (
+    if Sys.file_exists module_name_res_file then candidate
+    else
+      match module_name |> apply ~resolver ~use_bs_dependencies with
+      | None -> candidate
+      | Some (resolved_module_dir, case, bs_dependencies) ->
+        (* e.g. "dst" in case of dst/ModuleName.res *)
+        let walk_up_output_dir =
+          output_file_relative_dir |> path_to_list
+          |> List.map (fun _ -> Filename.parent_dir_name)
+          |> fun l ->
+          match l with
+          | [] -> ""
+          | _ :: rest -> rest |> List.fold_left ( +++ ) Filename.parent_dir_name
+        in
+        let from_output_dir_to_module_dir =
+          (* e.g. "../dst" *)
+          match bs_dependencies with
+          | true -> resolved_module_dir
+          | false -> walk_up_output_dir +++ resolved_module_dir
+        in
+        (* e.g. import "../dst/ModuleName.ext" *)
+        (match case = Uppercase with
+          | true -> module_name
+          | false -> module_name |> Module_name.uncapitalize)
+        |> Import_path.from_module ~dir:from_output_dir_to_module_dir
+             ~import_extension)
 
 let resolve_generated_module ~config ~output_file_relative ~resolver module_name
     =

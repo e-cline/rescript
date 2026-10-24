@@ -657,6 +657,15 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@tests/gentype-qualified-sources@workspace:tests/gentype_tests/qualified-sources":
+  version: 0.0.0-use.local
+  resolution: "@tests/gentype-qualified-sources@workspace:tests/gentype_tests/qualified-sources"
+  dependencies:
+    rescript: "workspace:^"
+    typescript: "npm:6.0.3"
+  languageName: unknown
+  linkType: soft
+
 "@tests/gentype-react-example@workspace:tests/gentype_tests/typescript-react-example":
   version: 0.0.0-use.local
   resolution: "@tests/gentype-react-example@workspace:tests/gentype_tests/typescript-react-example"

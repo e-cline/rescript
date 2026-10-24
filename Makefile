@@ -184,6 +184,7 @@ test-syntax-roundtrip: compiler
 test-gentype: lib
 	make -C tests/gentype_tests/typescript-react-example clean test
 	make -C tests/gentype_tests/stdlib-no-shims clean test
+	make -C tests/gentype_tests/qualified-sources clean test
 
 test-rewatch: lib
 	./rewatch/tests/suite.sh $(RESCRIPT_EXE)

@@ -29,6 +29,9 @@ type t = {
   project_root: string;
   shims_map: Module_name.t Module_name_map.t;
   sources: string list;
+  qualified_sources: string list;
+      (** Dirs of sources with ["subdirs": "qualified"], where src/Ui/Button.res
+          is module [Ui.Button]. *)
   suffix: string;
 }
 
@@ -50,6 +53,7 @@ let default =
     project_root = "";
     shims_map = Module_name_map.empty;
     sources = [];
+    qualified_sources = [];
     suffix = ".bs.js";
   }
 
@@ -78,6 +82,7 @@ type flag_refs = {
   shims_ref: (string * string) list ref;
   bs_dependencies_ref: string list ref;
   source_dirs_ref: string list ref;
+  qualified_source_dirs_ref: string list ref;
   dep_paths_ref: (string * string) list ref;
 }
 
@@ -96,6 +101,7 @@ let flag_refs =
         shims_ref = ref [];
         bs_dependencies_ref = ref [];
         source_dirs_ref = ref [];
+        qualified_source_dirs_ref = ref [];
         dep_paths_ref = ref [];
       })
 
@@ -110,6 +116,8 @@ let suffix_flag () = (Domain.DLS.get flag_refs).suffix_ref
 let shims () = (Domain.DLS.get flag_refs).shims_ref
 let bs_dependencies_flag () = (Domain.DLS.get flag_refs).bs_dependencies_ref
 let source_dirs_flag () = (Domain.DLS.get flag_refs).source_dirs_ref
+let qualified_source_dirs_flag () =
+  (Domain.DLS.get flag_refs).qualified_source_dirs_ref
 let dep_paths_flag () = (Domain.DLS.get flag_refs).dep_paths_ref
 
 let module_of_string = function
@@ -133,6 +141,9 @@ let add_bs_dependency name =
   bs_dependencies_flag () := name :: !(bs_dependencies_flag ())
 
 let add_source_dir dir = source_dirs_flag () := dir :: !(source_dirs_flag ())
+
+let add_qualified_source_dir dir =
+  qualified_source_dirs_flag () := dir :: !(qualified_source_dirs_flag ())
 
 let add_dep_path raw =
   match String.split_on_char '=' raw with
@@ -208,5 +219,6 @@ let build_config ~namespace =
     project_root;
     shims_map;
     sources = !(source_dirs_flag ());
+    qualified_sources = !(qualified_source_dirs_flag ());
     suffix;
   }

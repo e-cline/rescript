@@ -9,7 +9,17 @@ let with_gentype_source_dirs directories (config : Config.t) =
         config.gentype_args
         @ List.concat_map
             (fun directory -> ["-bs-gentype-source-dir"; directory])
-            directories;
+            directories
+        @ List.concat_map
+            (fun (source : Config.source) ->
+              match source.subdirs with
+              | Config.Qualified_subdirs ->
+                [
+                  "-bs-gentype-qualified-source-dir";
+                  Source.without_current_dir_segments source.dir;
+                ]
+              | Config.Own_dir | Config.All_subdirs -> [])
+            config.sources;
     }
 
 let dependent_is_allowed allowed_dependents dependent =

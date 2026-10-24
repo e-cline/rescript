@@ -58,9 +58,18 @@ let from_path ~config ~type_env path =
       | true -> "Internal"
       | false -> "External")
       (dep |> dep_to_string);
-  match config.namespace with
-  | None -> dep
-  | Some name -> dep |> handle_namespace ~name
+  let rec names = function
+    | External name -> Some [name]
+    | Internal _ -> None
+    | Dot (dep, name) -> Option.map (fun names -> names @ [name]) (names dep)
+  in
+  match Option.bind (names dep) (Qualified_modules.qualify ~config) with
+  | Some (module_path, rest) ->
+    List.fold_left (fun dep name -> Dot (dep, name)) (External module_path) rest
+  | None -> (
+    match config.namespace with
+    | None -> dep
+    | Some name -> dep |> handle_namespace ~name)
 
 let rec get_outer_module_name dep =
   match dep with

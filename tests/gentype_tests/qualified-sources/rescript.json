@@ -1,0 +1,15 @@
+{
+  "gentypeconfig": {
+    "module": "esmodule"
+  },
+  "name": "@tests/gentype-qualified-sources",
+  "namespace": true,
+  "sources": [
+    { "dir": "src", "subdirs": "qualified" }
+  ],
+  "package-specs": {
+    "module": "esmodule",
+    "in-source": true
+  },
+  "suffix": ".res.js"
+}

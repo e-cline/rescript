@@ -1,0 +1,15 @@
+{
+  "name": "@tests/gentype-qualified-sources",
+  "private": true,
+  "scripts": {
+    "build": "rescript build",
+    "clean": "rescript clean",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "rescript": "workspace:^"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3"
+  }
+}
