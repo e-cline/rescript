@@ -1,0 +1,31 @@
+References src/Ui/Button.res 4:4
+[
+  {
+    "range": {
+      "end": { "character": 29, "line": 1 },
+      "start": { "character": 25, "line": 1 }
+    },
+    "uri": "file:///Input.res"
+  },
+  {
+    "range": {
+      "end": { "character": 31, "line": 0 },
+      "start": { "character": 27, "line": 0 }
+    },
+    "uri": "file:///Button.res"
+  },
+  {
+    "range": {
+      "end": { "character": 28, "line": 0 },
+      "start": { "character": 24, "line": 0 }
+    },
+    "uri": "file:///App.res"
+  },
+  {
+    "range": {
+      "end": { "character": 8, "line": 4 },
+      "start": { "character": 4, "line": 4 }
+    },
+    "uri": "file:///Button.res"
+  }
+]

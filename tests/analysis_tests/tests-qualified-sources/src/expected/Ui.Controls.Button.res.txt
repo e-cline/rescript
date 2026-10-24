@@ -1,0 +1,7 @@
+Hover src/Ui/Controls/Button.res 1:41
+{
+  "contents": {
+    "kind": "markdown",
+    "value": "```rescript\nstring => string\n```"
+  }
+}

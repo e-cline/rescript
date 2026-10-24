@@ -270,7 +270,10 @@ let new_hover ~state ~full:{file; package} ~supports_markdown_links loc_item =
       let env = Query_env.from_file file in
       match References.exported_for_tip ~state ~env ~path ~package ~tip with
       | None -> None
-      | Some (_env, _name, stamp) -> (
+      | Some (env, _name, stamp) -> (
+        (* The path may lead through aliases into another file, such as the
+           namespace map of a qualified directory, which the stamp is in. *)
+        let file = env.file in
         match Stamps.find_module file.stamps stamp with
         | None -> None
         | Some md -> (

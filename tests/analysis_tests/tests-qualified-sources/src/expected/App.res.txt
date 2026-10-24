@@ -1,0 +1,40 @@
+Hover src/App.res 0:18
+{
+  "contents": {
+    "kind": "markdown",
+    "value": "```rescript\nmodule Button: {\n  module Icon\n  let make: string => string\n}\n```"
+  }
+}
+
+Definition src/App.res 3:33
+{
+  "range": {
+    "end": { "character": 8, "line": 1 },
+    "start": { "character": 4, "line": 1 }
+  },
+  "uri": "file:///Button.res"
+}
+
+Complete src/App.res 8:14
+pos_cursor:[8:14] pos_no_white:[8:13] Found expr:[8:11->8:14]
+Pexp_ident Ui.:[8:11->8:14]
+Completable: Cpath Value[Ui, ""]
+Package opens Stdlib.place holder Pervasives.JsxModules.place holder MyApp.place holder
+Resolved opens 2 MyApp Stdlib
+ContextPath Value[Ui, ""]
+Path Ui.
+[
+  { "detail": "module Controls", "kind": 9, "label": "Controls", "tags": [] },
+  { "detail": "module Button", "kind": 9, "label": "Button", "tags": [] },
+  { "detail": "module Input", "kind": 9, "label": "Input", "tags": [] }
+]
+
+Complete src/App.res 11:30
+pos_cursor:[11:30] pos_no_white:[11:29] Found expr:[11:11->11:30]
+Pexp_ident Ui.Controls.Button.:[11:11->11:30]
+Completable: Cpath Value[Ui, Controls, Button, ""]
+Package opens Stdlib.place holder Pervasives.JsxModules.place holder MyApp.place holder
+Resolved opens 2 MyApp Stdlib
+ContextPath Value[Ui, Controls, Button, ""]
+Path Ui.Controls.Button.
+[ { "detail": "string => string", "kind": 12, "label": "make", "tags": [] } ]

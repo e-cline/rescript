@@ -533,6 +533,8 @@ and package = {
   dependencies_files: File_set.t;
   paths_for_module: (file, paths) Hashtbl.t;
   namespace: string option;
+  qualified_roots: file_path list;
+      (** Dirs of qualified sources, relative to [root_path]. *)
   opens: path list;
   rescript_version: int * int;
   autocomplete: file list Misc.String_map.t;

@@ -106,7 +106,9 @@ let new_bs_package ~root_path =
             let project_files_and_paths =
               Find_files.find_project_files
                 ~public:(Find_files.get_public config)
-                ~namespace ~path:root_path ~source_directories ~lib_bs
+                ~namespace
+                ~qualified_roots:(Find_files.get_qualified_source_roots config)
+                ~path:root_path ~source_directories ~lib_bs
             in
             let paths_for_module =
               make_paths_for_module ~project_files_and_paths
@@ -196,6 +198,7 @@ let new_bs_package ~root_path =
              paths_for_module;
              opens;
              namespace;
+             qualified_roots = Find_files.get_qualified_source_roots config;
              autocomplete;
            }))
     | None -> None
@@ -206,6 +209,20 @@ let new_bs_package ~root_path =
   | None ->
     Log.log ("Unable to read " ^ rescript_json);
     None
+
+(* The module that the build compiles the source at [path] as: Button-MyApp
+   for src/Button.res, and Button-Ui-MyApp for src/Ui/Button.res in a
+   qualified source. *)
+let module_name_of_path (package : package) path =
+  let name = Find_files.get_name path in
+  match
+    Find_files.qualifier_of_path ~qualified_roots:package.qualified_roots
+      (Files.relpath package.root_path path)
+  with
+  | [] -> Build_system.namespaced_name package.namespace name
+  | qualifier ->
+    name ^ "-"
+    ^ Find_files.directory_map_name ~namespace:package.namespace qualifier
 
 let find_root ~uri packages_by_root =
   let path = Uri.to_path uri in

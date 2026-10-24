@@ -1,0 +1,17 @@
+{
+  "name": "@tests/qualified-sources",
+  "namespace": "my-app",
+  "sources": [
+    {
+      "dir": "src",
+      "subdirs": "qualified"
+    }
+  ],
+  "package-specs": [
+    {
+      "module": "esmodule",
+      "in-source": false
+    }
+  ],
+  "suffix": ".res.js"
+}

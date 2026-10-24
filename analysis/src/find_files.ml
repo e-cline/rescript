@@ -26,7 +26,7 @@ let get_source_directories ~include_dev ~base_dir config =
       else
         match item |> Yojson_helpers.get "subdirs" with
         | None | Some (`Bool false) -> [current /+ dir]
-        | Some (`Bool true) ->
+        | Some (`Bool true | `String "qualified") ->
           Files.collect_dirs (base_dir /+ current /+ dir)
           |> List.filter (fun name -> name <> Filename.current_dir_name)
           |> List.map (Files.relpath base_dir)
@@ -36,6 +36,57 @@ let get_source_directories ~include_dev ~base_dir config =
   match config |> Yojson_helpers.get "sources" with
   | None -> []
   | Some item -> handle_item "" item
+
+(* The dirs of sources with "subdirs": "qualified", relative to the package
+   root. Each directory below one is a module, so src/Ui/Button.res is
+   Ui.Button, compiled as Button-Ui-<namespace>. *)
+let get_qualified_source_roots config =
+  let rec handle_item current item =
+    match item with
+    | `List contents -> List.concat_map (handle_item current) contents
+    | `Assoc _ -> (
+      match
+        item |> Yojson_helpers.get "dir" |> bind Yojson_helpers.string_opt
+      with
+      | None -> []
+      | Some dir -> (
+        match item |> Yojson_helpers.get "subdirs" with
+        | Some (`String "qualified") -> [current /+ dir]
+        | Some ((`List _ | `Assoc _) as children) ->
+          handle_item (current /+ dir) children
+        | _ -> []))
+    | _ -> []
+  in
+  match config |> Yojson_helpers.get "sources" with
+  | None -> []
+  | Some item -> handle_item "" item
+
+let path_segments path =
+  String.split_on_char '/' path
+  |> List.concat_map (String.split_on_char '\\')
+  |> List.filter (fun segment ->
+      segment <> "" && segment <> Filename.current_dir_name)
+
+(* The module names of the directories between the qualified source root
+   that holds [relative_path] and the file, outermost first; [] for a file of
+   any other source. *)
+let qualifier_of_path ~qualified_roots relative_path =
+  let rec strip prefix segments =
+    match (prefix, segments) with
+    | [], segments -> Some segments
+    | first :: prefix, second :: segments when first = second ->
+      strip prefix segments
+    | _ :: _, _ -> None
+  in
+  let directories = path_segments (Filename.dirname relative_path) in
+  qualified_roots
+  |> List.find_map (fun root -> strip (path_segments root) directories)
+  |> Option.fold ~none:[] ~some:(List.map String.capitalize_ascii)
+
+(* The compilation unit of a qualified directory's namespace map, as the build
+   names it: Controls-Ui-MyApp for [Ui; Controls] in namespace MyApp. *)
+let directory_map_name ~namespace qualifier =
+  String.concat "-" (List.rev qualifier @ Option.to_list namespace)
 
 let is_compiled_file name =
   Filename.check_suffix name ".cmt" || Filename.check_suffix name ".cmti"
@@ -180,7 +231,8 @@ let find_package_root ~base ~sourcedirs_package_roots name =
   | _ -> Module_resolution.resolve_node_module_path ~start_path:base name
 
 (* returns a list of (absolute path to cmt(i), relative path from base to source file) *)
-let find_project_files ~public ~namespace ~path ~source_directories ~lib_bs =
+let find_project_files ~public ~namespace ~qualified_roots ~path
+    ~source_directories ~lib_bs =
   let dirs =
     source_directories |> List.map (Filename.concat path) |> String_set.of_list
   in
@@ -198,19 +250,44 @@ let find_project_files ~public ~namespace ~path ~source_directories ~lib_bs =
   |> if_debug true "Source files" (fun s ->
       s |> String_set.elements |> List.map Utils.dump_path |> String.concat " ");
 
+  let qualifier file =
+    qualifier_of_path ~qualified_roots (Files.relpath path file)
+  in
+  (* A file's module path, which tells apart same-named files of qualified
+     directories. *)
+  let module_path file = String.concat "." (qualifier file @ [get_name file]) in
   let interfaces = Hashtbl.create 100 in
   files
-  |> String_set.iter (fun path ->
-      if is_interface path then Hashtbl.replace interfaces (get_name path) path);
+  |> String_set.iter (fun file ->
+      if is_interface file then
+        Hashtbl.replace interfaces (module_path file) file);
 
   let normals =
     files |> String_set.elements
     |> Utils.filter_map (fun file ->
         if is_implementation file then (
           let module_name = get_name file in
-          let resi = Hashtbl.find_opt interfaces module_name in
-          Hashtbl.remove interfaces module_name;
-          let base = compiled_base_name ~namespace (Files.relpath path file) in
+          let resi = Hashtbl.find_opt interfaces (module_path file) in
+          Hashtbl.remove interfaces (module_path file);
+          let qualifier = qualifier file in
+          let base =
+            match qualifier with
+            | [] -> compiled_base_name ~namespace (Files.relpath path file)
+            | _ :: _ ->
+              Filename.chop_extension (Files.relpath path file)
+              ^ "-"
+              ^ directory_map_name
+                  ~namespace:(Option.map compiled_name_space namespace)
+                  qualifier
+          in
+          let unit_name =
+            match (qualifier, namespace) with
+            | [], None -> module_name
+            | [], Some namespace -> module_name ^ "-" ^ namespace
+            | _ :: _, _ ->
+              module_name ^ "-" ^ directory_map_name ~namespace qualifier
+          in
+          let found paths = Some (module_name, unit_name, paths) in
           match resi with
           | Some resi ->
             let cmti = (lib_bs /+ base) ^ ".cmti" in
@@ -218,9 +295,7 @@ let find_project_files ~public ~namespace ~path ~source_directories ~lib_bs =
             if Files.exists cmti then
               if Files.exists cmt then
                 (* Log.log("Intf and impl " ++ cmti ++ " " ++ cmt) *)
-                Some
-                  ( module_name,
-                    Shared_types.IntfAndImpl {cmti; resi; cmt; res = file} )
+                found (Shared_types.IntfAndImpl {cmti; resi; cmt; res = file})
               else None
             else (
               (* Log.log("Just intf " ++ cmti) *)
@@ -228,7 +303,7 @@ let find_project_files ~public ~namespace ~path ~source_directories ~lib_bs =
               None)
           | None ->
             let cmt = (lib_bs /+ base) ^ ".cmt" in
-            if Files.exists cmt then Some (module_name, Impl {cmt; res = file})
+            if Files.exists cmt then found (Shared_types.Impl {cmt; res = file})
             else (
               Log.log ("Bad source file (no cmt/cmi) " ^ (lib_bs /+ base));
               None))
@@ -236,26 +311,37 @@ let find_project_files ~public ~namespace ~path ~source_directories ~lib_bs =
   in
   let result =
     normals
-    |> List.filter_map (fun (name, paths) ->
-        let original_name = name in
-        let name =
-          match namespace with
-          | None -> name
-          | Some namespace -> name ^ "-" ^ namespace
-        in
+    |> List.filter_map (fun (original_name, name, paths) ->
         match public with
         | Some public ->
           if public |> String_set.mem original_name then Some (name, paths)
           else None
         | None -> Some (name, paths))
   in
+  (* The namespace map of each qualified directory, which resolves the names
+     of its modules and directories. *)
+  let directory_maps =
+    files |> String_set.elements
+    |> List.concat_map (fun file ->
+        let rec prefixes acc = function
+          | [] -> []
+          | directory :: rest ->
+            let prefix = acc @ [directory] in
+            prefix :: prefixes prefix rest
+        in
+        prefixes [] (qualifier file))
+    |> List.sort_uniq compare
+    |> List.map (fun qualifier ->
+        let name = directory_map_name ~namespace qualifier in
+        (name, Shared_types.Namespace {cmt = (lib_bs /+ name) ^ ".cmt"}))
+  in
   match namespace with
-  | None -> result
+  | None -> directory_maps @ result
   | Some namespace ->
     let module_name = name_space_to_name namespace in
     let cmt = (lib_bs /+ namespace) ^ ".cmt" in
     Log.log ("adding namespace " ^ namespace ^ " : " ^ module_name ^ " : " ^ cmt);
-    (module_name, Namespace {cmt}) :: result
+    ((module_name, Shared_types.Namespace {cmt}) :: directory_maps) @ result
 
 let find_dependency_files base config =
   let deps =
@@ -316,6 +402,7 @@ let find_dependency_files base config =
                     in
                     let project_files =
                       find_project_files ~public:(get_public inner) ~namespace
+                        ~qualified_roots:(get_qualified_source_roots inner)
                         ~path ~source_directories ~lib_bs
                     in
                     Some (compiled_directories, project_files))

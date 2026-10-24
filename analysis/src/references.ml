@@ -32,6 +32,38 @@ let normalize_external_reference_key ~namespace ~module_name ~path =
     (namespace, source_module :: path)
   | _ -> (module_name, path)
 
+(** A module of a qualified directory, src/Ui/Button.res in namespace MyApp,
+  * is reached through the map of the package or of any directory around it:
+  * MyApp.Ui.Button from the top level, Ui-MyApp.Button beside it. Its
+  * references are indexed under each of those keys.
+  *)
+let external_reference_keys ~(package : package) ~(file : File.t) ~path =
+  let source = Uri.to_path file.uri in
+  match
+    Find_files.qualifier_of_path ~qualified_roots:package.qualified_roots
+      (Files.relpath package.root_path source)
+  with
+  | [] ->
+    [
+      normalize_external_reference_key ~namespace:package.namespace
+        ~module_name:file.module_name ~path;
+    ]
+  | qualifier ->
+    let name = Find_files.get_name source in
+    let rec splits outer = function
+      | [] -> [(outer, [])]
+      | directory :: inner ->
+        (outer, directory :: inner) :: splits (outer @ [directory]) inner
+    in
+    splits [] qualifier
+    |> List.filter_map (fun (outer, inner) ->
+        (match outer with
+          | [] -> package.namespace
+          | _ :: _ ->
+            Some
+              (Find_files.directory_map_name ~namespace:package.namespace outer))
+        |> Option.map (fun map -> (map, inner @ (name :: path))))
+
 let get_loc_item ~full ~pos ~debug =
   let log n msg = if debug then Printf.printf "get_loc_item #%d: %s\n" n msg in
   let pos = line_col_to_cmt_loc ~pos in
@@ -489,32 +521,29 @@ let for_local_stamp ~state ~full:{file; extra; package} stamp (tip : Tip.t) =
               Module_path.to_path declared.module_path declared.name.txt
             in
             maybe_log ("Now checking path " ^ path_to_string path);
-            let this_module_name = file.module_name in
-            let normalized_module_name, normalized_path =
-              normalize_external_reference_key ~namespace:package.namespace
-                ~module_name:this_module_name ~path
-            in
+            let keys = external_reference_keys ~package ~file ~path in
             let externals =
               package.project_files |> File_set.elements
               |> List.filter (fun name -> name <> file.module_name)
               |> List.map (fun module_name ->
                   Cmt.fulls_from_module ~package ~module_name
                   |> List.map (fun {file; extra} ->
-                      match
-                        Hashtbl.find_opt extra.external_references
-                          normalized_module_name
-                      with
-                      | None -> []
-                      | Some refs ->
-                        let locs =
-                          refs
-                          |> Utils.filter_map (fun (p, t, locs) ->
-                              if p = normalized_path && t = tip then Some locs
-                              else None)
-                        in
-                        locs
-                        |> List.map (fun loc ->
-                            {uri = file.uri; loc_opt = Some loc})))
+                      keys
+                      |> List.concat_map
+                           (fun (normalized_module_name, normalized_path) ->
+                             match
+                               Hashtbl.find_opt extra.external_references
+                                 normalized_module_name
+                             with
+                             | None -> []
+                             | Some refs ->
+                               refs
+                               |> Utils.filter_map (fun (p, t, locs) ->
+                                   if p = normalized_path && t = tip then
+                                     Some locs
+                                   else None))
+                      |> List.map (fun loc ->
+                          {uri = file.uri; loc_opt = Some loc})))
               |> List.concat |> List.concat
             in
             alternative_references @ externals)

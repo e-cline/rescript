@@ -39,9 +39,7 @@ let full_from_uri ~state ~uri =
   match Packages.get_package ~state ~uri with
   | None -> None
   | Some package -> (
-    let module_name =
-      Build_system.namespaced_name package.namespace (Find_files.get_name path)
-    in
+    let module_name = Packages.module_name_of_path package path in
     match full_for_incremental_cmt ~package ~module_name ~uri with
     | Some cmt_info -> Some cmt_info
     | None -> (
@@ -78,9 +76,7 @@ let load_cmt_infos_from_path ~state ~path =
   match Packages.get_package ~state ~uri with
   | None -> None
   | Some package -> (
-    let module_name =
-      Build_system.namespaced_name package.namespace (Find_files.get_name path)
-    in
+    let module_name = Packages.module_name_of_path package path in
     match Hashtbl.find_opt package.paths_for_module module_name with
     | Some paths ->
       let cmt = get_cmt_path ~uri paths in

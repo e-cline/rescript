@@ -1574,7 +1574,25 @@ let get_opens ~state ~debug ~raw_opens ~package ~env =
       ^ string_of_int (List.length raw_opens)
       ^ " "
       ^ String.concat " ... " (raw_opens |> List.map path_to_string));
-  let package_opens = package.opens in
+  (* A module of a qualified directory is compiled with the maps of its
+     directories open, outermost first, after the package namespace. *)
+  let directory_opens =
+    let rec prefixes acc = function
+      | [] -> []
+      | directory :: rest ->
+        let prefix = acc @ [directory] in
+        prefix :: prefixes prefix rest
+    in
+    Find_files.qualifier_of_path ~qualified_roots:package.qualified_roots
+      (Files.relpath package.root_path (Uri.to_path env.Query_env.file.uri))
+    |> prefixes []
+    |> List.map (fun qualifier ->
+        [
+          Find_files.directory_map_name ~namespace:package.namespace qualifier;
+          "place holder";
+        ])
+  in
+  let package_opens = package.opens @ directory_opens in
   if debug && package_opens <> [] then
     Printf.printf "%s\n"
       ("Package opens "

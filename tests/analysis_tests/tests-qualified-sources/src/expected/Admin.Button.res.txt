@@ -1,0 +1,8 @@
+Definition src/Admin/Button.res 0:28
+{
+  "range": {
+    "end": { "character": 8, "line": 4 },
+    "start": { "character": 4, "line": 4 }
+  },
+  "uri": "file:///Button.res"
+}
