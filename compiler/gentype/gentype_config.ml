@@ -32,6 +32,9 @@ type t = {
   qualified_sources: string list;
       (** Dirs of sources with ["subdirs": "qualified"], where src/Ui/Button.res
           is module [Ui.Button]. *)
+  source_qualifier: string list;
+      (** The directories of the module being processed below its qualified
+          source, [["Ui"]] for src/Ui/Button.res. *)
   suffix: string;
 }
 
@@ -54,6 +57,7 @@ let default =
     shims_map = Module_name_map.empty;
     sources = [];
     qualified_sources = [];
+    source_qualifier = [];
     suffix = ".bs.js";
   }
 
@@ -220,5 +224,6 @@ let build_config ~namespace =
     shims_map;
     sources = !(source_dirs_flag ());
     qualified_sources = !(qualified_source_dirs_flag ());
+    source_qualifier = [];
     suffix;
   }

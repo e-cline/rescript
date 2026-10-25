@@ -74,27 +74,48 @@ let directories ~config =
 let map_name ~package_namespace qualifier =
   String.concat "-" (List.rev qualifier @ Option.to_list package_namespace)
 
+let segments path =
+  String.split_on_char '/' path
+  |> List.concat_map (String.split_on_char '\\')
+  |> List.filter (fun segment -> segment <> "" && segment <> ".")
+
+(* The directories of the module at [source_file] below the qualified source
+   that holds it, [["Ui"]] for src/Ui/Button.res, as discovery names them. *)
+let qualifier_of_source ~(config : Config.t) source_file =
+  let rec strip prefix path =
+    match (prefix, path) with
+    | [], path -> Some path
+    | first :: prefix, second :: path when first = second -> strip prefix path
+    | _ :: _, _ -> None
+  in
+  let directories =
+    let path = segments (Filename.dirname source_file) in
+    if Filename.is_relative source_file then Some path
+    else strip (segments config.project_root) path
+  in
+  match directories with
+  | None -> []
+  | Some directories ->
+    config.qualified_sources
+    |> List.find_map (fun root -> strip (segments root) directories)
+    |> Option.fold ~none:[] ~some:(List.map String.capitalize_ascii)
+
 (* genType reads a module's namespace from its compilation unit, which for a
    module of a qualified directory is the directory's map, Controls-Ui-MyApp.
-   The package namespace is what follows the directories. *)
+   The package namespace is what follows the module's own directories. *)
 let package_namespace ~(config : Config.t) =
-  match config.namespace with
-  | None -> None
-  | Some namespace -> (
-    directories ~config
-    |> List.find_map (fun qualifier ->
-        let directories = map_name ~package_namespace:None qualifier in
-        if namespace = directories then Some None
-        else if String.starts_with ~prefix:(directories ^ "-") namespace then
-          Some
-            (Some
-               (String.sub namespace
-                  (String.length directories + 1)
-                  (String.length namespace - String.length directories - 1)))
-        else None)
-    |> function
-    | Some package_namespace -> package_namespace
-    | None -> Some namespace)
+  match (config.namespace, config.source_qualifier) with
+  | None, _ -> None
+  | Some namespace, [] -> Some namespace
+  | Some namespace, qualifier ->
+    let directories = map_name ~package_namespace:None qualifier in
+    if namespace = directories then None
+    else if String.starts_with ~prefix:(directories ^ "-") namespace then
+      Some
+        (String.sub namespace
+           (String.length directories + 1)
+           (String.length namespace - String.length directories - 1))
+    else Some namespace
 
 (* The qualified module that a path of module names starts with, and the rest
    of the path: [MyApp; Ui; Button; t] is [Ui.Button] and [t]. *)

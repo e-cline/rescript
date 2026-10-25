@@ -151,6 +151,13 @@ let process_cmt_file cmt =
         | true -> ".resi"
         | false -> ".res")
     in
+    let config =
+      {
+        config with
+        source_qualifier =
+          Qualified_modules.qualifier_of_source ~config source_file;
+      }
+    in
     let output_file = source_file |> Paths.get_output_file ~config in
     let output_file_relative =
       source_file |> Paths.get_output_file_relative ~config
