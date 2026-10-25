@@ -119,6 +119,14 @@ try {
     "-bs-ns",
     "Controls-Ui-MyApp",
   ]);
+  await compile("src/Ui/Controls", "Alias", [
+    "-bs-open-ns",
+    "MyApp",
+    "-bs-open-ns",
+    "Ui-MyApp",
+    "-bs-ns",
+    "Controls-Ui-MyApp",
+  ]);
   await compile("src/Admin", "Button", [
     "-bs-open-ns",
     "MyApp",
@@ -137,6 +145,15 @@ try {
     "Ui.Button.Icon",
     "Ui.Controls",
     "Ui.Controls.Button",
+  ]);
+
+  // A path through an alias of a directory names what it reaches, as the
+  // path through the directory would.
+  assert.deepEqual(await astDependencies("src/Ui/Controls/Alias.ast"), [
+    "Ui",
+    "Ui.Controls",
+    "Ui.Controls.Button",
+    "Ui.Input",
   ]);
 
   // JavaScript files are named after their source files, not their units.

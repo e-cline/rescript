@@ -44,7 +44,25 @@ let rec lookup_free p m =
   | [] -> raise Not_found
   | s :: p -> (
     let (Node (f, m')) = String_map.find s m in
-    try lookup_free p m' with Not_found -> f)
+    try lookup_free p m'
+    with Not_found ->
+      if p <> [] && String_map.is_empty m' then extend_alias f p else f)
+
+(* A path that continues past an alias of a module from outside the file,
+   [U.Zed] after [module U = Ui], records its target and the target's path
+   as [Ui.Zed] would: [Ui] and [Ui.Zed]. Only such leaves have free names
+   and no submodules. *)
+and extend_alias free p =
+  String_set.fold
+    (fun target acc ->
+      fst
+        (List.fold_left
+           (fun (acc, path) m ->
+             let path = path ^ "." ^ m in
+             (String_set.add path acc, path))
+           (String_set.add target acc, target)
+           p))
+    free String_set.empty
 
 (* Returns the node corresponding to the structure at path p *)
 let rec lookup_map lid m =
@@ -400,12 +418,20 @@ and add_module_alias bv l =
   try
     add_parent bv l;
     lookup_map l.txt bv
-  with Not_found -> (
-    match l.txt with
-    | Lident s -> make_leaf s
-    | _ ->
-      addmodule bv l;
-      bound (* cannot delay *))
+  with Not_found -> free_alias bv l
+
+(* An alias whose target is not bound in the file, [module U = Ui] or
+   [module U = Ui.Controls], is a leaf naming the target, so that paths
+   through it record what they reach. *)
+and free_alias bv l =
+  match l.txt with
+  | Lident s -> make_leaf s
+  | lid -> (
+    addmodule bv l;
+    match Longident.flatten lid with
+    | head :: _ :: _ as path when not (String_map.mem head bv) ->
+      make_leaf (String.concat "." path)
+    | _ -> bound (* cannot delay *))
 
 and add_modtype_binding bv mty =
   if not !((Clflags.current ()).transparent_modules) then add_modtype bv mty;
@@ -470,12 +496,7 @@ and add_module_binding bv modl =
     try
       add_parent bv l;
       lookup_map l.txt bv
-    with Not_found -> (
-      match l.txt with
-      | Lident s -> make_leaf s
-      | _ ->
-        addmodule bv l;
-        bound))
+    with Not_found -> free_alias bv l)
   | Pmod_structure s -> make_node (snd (add_structure_binding bv s))
   | _ ->
     if !((Clflags.current ()).transparent_modules) then add_module bv modl;

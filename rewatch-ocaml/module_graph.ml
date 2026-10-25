@@ -204,10 +204,10 @@ let resolved_dependencies ~find_module ~find_namespace_maps ~find_module_path
       resolved
   in
   (* A directory named on its own, as by [open Ui], makes its modules what a
-     plain name may refer to. Unless it is one of the module's own
-     directories, whose maps it depends on anyway, or a path through it names
-     the module used, the module waits for all of the directory, since an
-     alias such as [module U = Ui] hides which one it uses. *)
+     plain name may refer to. A path through the directory, or through an
+     alias of it such as [module U = Ui], names the module it uses, so the
+     module waits for all of the directory only when no such path does and
+     the directory is not one of its own, whose map would contain it. *)
   let opened =
     List.filter_map
       (fun (_, target) ->

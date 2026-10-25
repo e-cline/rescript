@@ -2275,6 +2275,29 @@ grep 'Namespace SharedNamespace is provided by both' \
 grep 'namespace-one' "$namespace_collision/output.log" >/dev/null
 grep 'namespace-two' "$namespace_collision/output.log" >/dev/null
 
+# A path through an alias of a directory depends on the module it reaches,
+# whether the directory is one of the module's own or another one that the
+# module also names a module of directly. One compiler domain makes the
+# order deterministic: Zed would otherwise be compiled after its users.
+qualified_alias="$work/qualified-alias"
+mkdir -p "$qualified_alias/src/Ui/Controls"
+printf '{"name":"qualified-alias","namespace":"Qualified","sources":{"dir":"src","subdirs":"qualified"}}\n' \
+  >"$qualified_alias/rescript.json"
+printf '{"type":"module"}\n' >"$qualified_alias/package.json"
+printf 'module U = Ui\nlet value = U.Zed.value + Ui.Button.value\n' \
+  >"$qualified_alias/src/App.res"
+printf 'module U = Ui\nlet value = U.Zed.value\n' \
+  >"$qualified_alias/src/Ui/Controls/Alias.res"
+printf 'let value = 1\n' >"$qualified_alias/src/Ui/Button.res"
+printf 'let value = 1\n' >"$qualified_alias/src/Ui/First.res"
+printf 'let value = First.value + 1\n' >"$qualified_alias/src/Ui/Second.res"
+printf 'let value = Second.value + 1\n' >"$qualified_alias/src/Ui/Zed.res"
+REWATCH_COMPILER_DOMAINS=1 "$port" build "$qualified_alias" \
+  >"$qualified_alias/build.log" 2>&1 || {
+  cat "$qualified_alias/build.log" >&2
+  exit 1
+}
+
 # A qualified source's directories are modules: src/Ui/Button.res is
 # Ui.Button, beside Admin.Button, and its JavaScript keeps its file's name.
 qualified_sources="$work/qualified-sources"
